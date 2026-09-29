@@ -30,10 +30,10 @@ REMOVED_FLAT_METHODS = [
     "client.get_executor",
     "client.register_worker",
     "client.leaderboard",
-    # Con `client.` delante a proposito: `guides/task-lifecycle.md` define su
-    # PROPIA corrutina `wait_for_completion(task_id)` sobre la REST API, que no
-    # tiene nada que ver con el metodo borrado. La entrada suelta la marcaba
-    # como error y obligaba a editar una pagina ajena para callar el guardia.
+    # Prefixed with `client.` on purpose: a docs guide defines its OWN
+    # `wait_for_completion(task_id)` coroutine over the REST API, unrelated to
+    # the removed method. The bare entry flagged it as an error and forced an
+    # edit to someone else's page just to silence the guard.
     "client.wait_for_completion",
     "workers.get(",  # SDK-43: route never existed
 ]

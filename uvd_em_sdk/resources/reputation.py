@@ -269,7 +269,7 @@ class ReputationResource:
     #
     # The ERC-8004 Reputation Registry records msg.sender as the author of a
     # rating. When the Facilitator relays your feedback to sponsor the gas, ITS
-    # wallet is the one on record — measured on Base, 91,3% of the network's
+    # wallet is the one on record — measured on Base, 91.3% of the network's
     # feedback sat under a single address that, since revoking is authorised the
     # same way, could also have erased all of it.
     #
@@ -319,12 +319,15 @@ class ReputationResource:
         are in the response. From the second rating onward it is a single
         signature.
 
-        **Verify ``delegate`` against a list you control before signing that
-        authorization.** A 7702 authorization gives the named contract the power
-        to act as your account; taking the address on trust from any server
-        response means a compromised one could drain you, with a signature that
-        is genuinely yours. Canonical addresses ship in the repo at
-        ``contracts/deployments/feedback-delegate.json``.
+        **Verify ``delegate`` before signing that authorization.** A 7702
+        authorization gives the named contract the power to act as your account;
+        taking the address on trust from any server response means a compromised
+        one could drain you, with a signature that is genuinely yours. The
+        canonical list of FeedbackDelegate deployments is not public yet. Until
+        it is, check ``delegate`` in a block explorer before signing the FIRST
+        authorization: the contract must be verified, and its
+        ``REPUTATION_REGISTRY()`` must equal the Reputation Registry of that
+        network. Both are necessary conditions, not sufficient ones.
         """
         body: dict[str, Any] = {
             "task_id": task_id,

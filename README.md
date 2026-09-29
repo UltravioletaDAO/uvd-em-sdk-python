@@ -8,9 +8,10 @@ Enums and the network registry are generated from the backend source of truth
 
 ## Replaces `em-plugin-sdk`
 
-`uvd-em-sdk` is the package formerly published as **`em-plugin-sdk`**, moved
-out of the Execution Market monorepo into its own repository and renamed.
-Version 0.9.0 has the API of `em-plugin-sdk` 0.8.0 under the new names:
+`uvd-em-sdk` is the package formerly distributed as **`em-plugin-sdk`** from
+the Execution Market monorepo (never released on PyPI), moved into its own
+repository and renamed. `uvd-em-sdk` 0.9.0 is the first PyPI release; it has
+the API of `em-plugin-sdk` 0.8.0 under the new names:
 
 | | Before | Now |
 |---|---|---|
@@ -233,7 +234,7 @@ generated snapshot of the backend `NETWORK_CONFIG` — resync with
 The ERC-8004 ReputationRegistry records `msg.sender` as the author of a rating,
 and there is no delegation path in the deployed contract. So a rating relayed by
 the Facilitator — which is what sponsored gas means — is attributed **to the
-Facilitator**. Measured on Base, that was **91,3%** of the network's feedback
+Facilitator**. Measured on Base, that was **91.3%** of the network's feedback
 sitting under one address that, since revoking is authorised off the same field,
 could also have erased all of it.
 

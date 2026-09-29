@@ -2,8 +2,9 @@
 
 ## [0.9.0] — unreleased
 
-First release under this name. `uvd-em-sdk` replaces `em-plugin-sdk`, whose
-last release was 0.8.0, published from the Execution Market monorepo.
+First PyPI release. `uvd-em-sdk` replaces `em-plugin-sdk`, formerly
+distributed from the Execution Market monorepo (never released on PyPI; its
+last version there was 0.8.0).
 
 ### Changed
 

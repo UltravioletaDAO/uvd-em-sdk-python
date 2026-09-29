@@ -1,7 +1,8 @@
 """uvd-em-sdk — THE canonical Python client for the Execution Market REST API.
 
-Formerly ``em-plugin-sdk`` inside the Execution Market monorepo (0.8.0 was
-its last release there); 0.9.0 is the same API under this name. Enums are
+Formerly ``em-plugin-sdk``, distributed from the Execution Market monorepo and
+never released on PyPI (0.8.0 was its last version there); 0.9.0, the first
+PyPI release, is the same API under this name. Enums are
 generated from the backend (``mcp_server/models.py`` of Execution Market) by
 ``scripts/sync_enums.py``; ``tests/test_enums_sync.py`` enforces parity where
 that backend source is present (skipped otherwise).

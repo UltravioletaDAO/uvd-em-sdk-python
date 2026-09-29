@@ -43,26 +43,14 @@ That address is a destination, not a key: no ed25519 signer is needed on the
 machine doing the work, which is why a device, a container or a person's phone
 can all get paid the same way.
 
->>> WHY THE PAYEE TRAVELS AS ``em_worker_wallet`` <<<
-The gateway spec (``infrastructure/pay/em-gateway.yml``) declares the payee of
-the 87% split as the recipient alias ``worker: {account: "${EM_WORKER_WALLET}"}``
-**deliberately without that env var set**, so our patched gate resolves it per
-request — env first, query params second (the same indirection the *charge*
-intent already used; upstream issue ``solana-foundation/pay#424``). The live
-canary accepts three spellings of that query param — ``em_worker_wallet``,
-``em_worker`` and ``worker``. This module always sends ``em_worker_wallet``:
+>>> THE PAYEE TRAVELS AS ``em_worker_wallet`` <<<
+The payee of the 87% split is named per request: this module always sends the
+executor's Solana address as ``?em_worker_wallet=<pubkey>``.
 
-  * it is the exact lowercase of the ``${EM_WORKER_WALLET}`` alias in the YAML,
-    so the wire name and the config name grep as one thing;
-  * ``worker`` is a plausible *business* query parameter, and the gateway
-    proxies unmatched requests to the EM API (``routing.url``) — a bare
-    ``worker=`` could one day mean something to the backend too;
-  * ``em_worker`` matches neither the alias nor the other conventions.
-
-A wallet the gate does not resolve is NOT an error upstream: it silently falls
-back to the configured payout. That is precisely why
-:func:`verify_session_splits` re-reads the minted challenge instead of trusting
-that the parameter was honoured — config is not evidence.
+A wallet the gateway does not resolve is NOT an error: it silently falls back
+to the configured payout. That is why :func:`verify_session_splits` re-reads
+the minted challenge instead of trusting that the parameter was honoured —
+config is not evidence.
 
 Config (env):
   ``EM_METERED_BILLING``          force metering on/off; unset decides per task
@@ -73,8 +61,8 @@ Config (env):
   ``EM_METERED_PATH``             metered ApiSpec path used to mint the offer
                                   (default ``hello``, the cheap smoke endpoint
                                   — never a task write)
-  ``EM_METERED_ROUTE``            value for the ``X-EM-Route`` header when the
-                                  gateway sits behind the canary rule
+  ``EM_METERED_ROUTE``            optional routing header value, sent as
+                                  ``X-EM-Route`` when set
   ``EM_METERED_TICK_SECONDS``     seconds between ticks (default 30)
   ``EM_METERED_UNIT``             unit of work (default ``second``)
   ``EM_METERED_PRICE_PER_UNIT``   price of one unit in USD (default 0.000333)

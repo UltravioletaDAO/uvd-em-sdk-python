@@ -130,13 +130,12 @@ def test_readme_mentions_no_removed_flat_methods():
 
 
 def test_readme_gives_the_install_that_actually_works():
-    """D-03, decided the other way on 2026-09-21: the package IS on PyPI.
+    """The README must name an install that resolves: ``pip install uvd-em-sdk``.
 
-    This test used to assert the opposite (`"pip install uvd-em-sdk" not in
-    text`) and it was right to: until the release existed, that command 404'd,
-    and a README is the first thing a consumer runs. Now the release is the
-    supported path, so the same test guards the same property from the other
-    side -- the README must name an install that resolves.
+    em-plugin-sdk was never released on PyPI -- it was installed from the
+    Execution Market monorepo -- and uvd-em-sdk 0.9.0 is the first PyPI
+    release. A README is the first thing a consumer runs, so the install line
+    it gives is guarded here, not remembered.
 
     This file is the PyPI long_description. Whatever it says here is what the
     project page says, and a published version cannot be replaced.
