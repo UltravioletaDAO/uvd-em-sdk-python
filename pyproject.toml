@@ -1,0 +1,105 @@
+[build-system]
+# Pinned for the same reason as `requirements-docgen.txt`: the backend decides
+# the METADATA of the artifact (today `Metadata-Version: 2.5`), and a release
+# build must not depend on whatever hatchling shipped that morning. There is no
+# lockfile behind this -- in a build-system table the pin IS the lock.
+# Moving it: rebuild, `twine check`, and diff the sdist file list first.
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "em-plugin-sdk"
+# Single source of truth: em_plugin_sdk/__init__.py::__version__
+# (hatch reads it at build time — see [tool.hatch.version]).
+dynamic = ["version"]
+description = "Python SDK for the Execution Market API — publish tasks, manage workers, handle payments"
+readme = "README.md"
+# SPDX expression + the file itself. `{ text = "MIT" }` put the word "MIT" in
+# the metadata and shipped NO license text: the sdist and the wheel carried
+# none, so what PyPI showed was a claim with nothing behind it. `license-files`
+# is what puts LICENSE into both artifacts.
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    { name = "Ultravioleta DAO", email = "dev@ultravioletadao.xyz" },
+]
+keywords = ["execution-market", "ai-agents", "mcp", "x402", "erc8004"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    # Measured, not assumed: 387/387 on a clean 3.13 venv (2026-09-21). No
+    # 3.14 claim until the suite runs on it -- classifiers freeze into the
+    # metadata of a version that can never be republished.
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "httpx>=0.25.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+# uvd-x402-sdk va CLAVADO, como ruff aca abajo y por una razon mas cara: es la
+# libreria que firma ordenes de dinero (EIP-3009 y la LifecycleOrder EIP-712).
+# Con un rango abierto, una release ajena entra sola en el proximo install y
+# puede poner rojo a main sin que nadie toque el rail — paso el 2026-09-07 con
+# 0.80.0. Moverlo exige correr el gate de c0der/config/pins.toml
+# (dao/execution-market, pypi) antes y despues, en los tres lugares a la vez.
+wallet = [
+    "uvd-x402-sdk[wallet]==0.91.2",
+]
+realtime = [
+    "websockets>=12.0",
+]
+all = [
+    "uvd-x402-sdk[wallet]==0.91.2",
+    "websockets>=12.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "websockets>=12.0",
+    "uvd-x402-sdk[wallet]==0.91.2",
+    # Pinned like the backend job: an open range let 0.16.0 in (2026-07-23)
+    # and its formatter reflows code no one touched, so CI fails on unrelated
+    # PRs. Bumping the pin requires reformatting the package in the same PR.
+    "ruff==0.15.22",
+]
+
+[project.urls]
+Homepage = "https://execution.market"
+Documentation = "https://api.execution.market/docs"
+Repository = "https://github.com/UltravioletaDAO/execution-market"
+Source = "https://github.com/UltravioletaDAO/execution-market/tree/main/em-plugin-sdk"
+
+[tool.hatch.version]
+path = "em_plugin_sdk/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["em_plugin_sdk"]
+
+# Everything the sdist carries is PUBLIC, and a released sdist cannot be
+# replaced. `docs/` here is repo-internal notes, not SDK documentation, so it
+# is excluded; `tests/`, `examples/` and `scripts/` stay because they are the
+# package's own and the parity tests call `scripts/sync_*.py`.
+# Rationale and the content audit: docs/architecture/em-plugin-sdk-packaging.md
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "docs",
+    ".gitignore",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88

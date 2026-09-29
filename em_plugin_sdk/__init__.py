@@ -1,0 +1,172 @@
+"""Execution Market Plugin SDK — THE canonical Python client for the EM REST API.
+
+Declared canonical in F3-6: the other in-repo Python stacks are either a
+thin facade over it or reduced to the OWS ERC-8128 signer
+(``sdk/python/execution_market``, kept as a compatibility shim). Enums are
+generated from the backend (``mcp_server/models.py``) by
+``scripts/sync_enums.py``; ``tests/test_enums_sync.py`` enforces parity.
+"""
+
+from .client import EMClient
+from .models import (
+    Task,
+    TaskList,
+    TaskStatus,
+    TaskCategory,
+    EvidenceType,
+    TargetExecutorType,
+    DisputeReason,
+    Submission,
+    SubmissionList,
+    Application,
+    ApplicationList,
+    Executor,
+    H2AApplication,
+    H2AApplicationList,
+    HealthResponse,
+    PlatformConfig,
+    PaymentConfig,
+    PaymentEvent,
+    PaymentTimeline,
+    AgentReputation,
+    AgentIdentity,
+    ReputationNetworkPreference,
+    CrossChainReputation,
+    EvidenceUploadInfo,
+    EvidenceVerifyResult,
+    Webhook,
+    WebhookList,
+    ServiceListing,
+    ServiceListingList,
+    ServiceOrder,
+    SellerReputation,
+    SellerCorrelation,
+    CreateTaskParams,
+    SubmitEvidenceParams,
+    ApproveParams,
+    RejectParams,
+)
+from .exceptions import (
+    EMError,
+    EMAuthError,
+    EMNotFoundError,
+    EMValidationError,
+    EMServerError,
+)
+from .fees import FeeBreakdown, calculate_fee, calculate_reverse_fee, get_fee_rate
+from .networks import (
+    NetworkInfo,
+    TokenInfo,
+    NETWORKS,
+    get_network,
+    get_enabled_networks,
+    get_supported_tokens,
+    is_valid_pair,
+    get_chain_id,
+    get_escrow_networks,
+    has_escrow_support,
+    DEFAULT_NETWORK,
+    DEFAULT_TOKEN,
+)
+from .escrow_signing import build_escrow_pre_auth, compute_escrow_nonce
+from .metered_channel import (
+    COUNT_UNITS,
+    UNIT_SECONDS,
+    MeteredChannel,
+    MeteredChannelError,
+    MeteredChannelUnavailable,
+    streaming_requested,
+)
+
+# Wallet adapter (optional — requires uvd-x402-sdk[wallet]>=0.34.0)
+try:
+    from uvd_x402_sdk.wallet import WalletAdapter, EnvKeyAdapter, OWSWalletAdapter
+except ImportError:
+    pass
+
+# SINGLE SOURCE OF TRUTH for the SDK version (SDK-51):
+# - pyproject.toml derives it at build time ([tool.hatch.version])
+# - client.py derives the User-Agent from it at runtime
+# Bump it HERE only; test_version.py enforces consistency.
+__version__ = "0.8.0"
+
+__all__ = [
+    # Client
+    "EMClient",
+    # Models — responses
+    "Task",
+    "TaskList",
+    "TaskStatus",
+    "TaskCategory",
+    "EvidenceType",
+    "TargetExecutorType",
+    "DisputeReason",
+    "Submission",
+    "SubmissionList",
+    "Application",
+    "ApplicationList",
+    "Executor",
+    "H2AApplication",
+    "H2AApplicationList",
+    "HealthResponse",
+    "PlatformConfig",
+    "PaymentConfig",
+    "PaymentEvent",
+    "PaymentTimeline",
+    "AgentReputation",
+    "AgentIdentity",
+    "ReputationNetworkPreference",
+    "CrossChainReputation",
+    "EvidenceUploadInfo",
+    "EvidenceVerifyResult",
+    "Webhook",
+    "WebhookList",
+    "ServiceListing",
+    "ServiceListingList",
+    "ServiceOrder",
+    "SellerReputation",
+    "SellerCorrelation",
+    # Request params
+    "CreateTaskParams",
+    "SubmitEvidenceParams",
+    "ApproveParams",
+    "RejectParams",
+    # Exceptions
+    "EMError",
+    "EMAuthError",
+    "EMNotFoundError",
+    "EMValidationError",
+    "EMServerError",
+    # Fees
+    "FeeBreakdown",
+    "calculate_fee",
+    "calculate_reverse_fee",
+    "get_fee_rate",
+    # Networks
+    "NetworkInfo",
+    "TokenInfo",
+    "NETWORKS",
+    "get_network",
+    "get_enabled_networks",
+    "get_supported_tokens",
+    "is_valid_pair",
+    "get_chain_id",
+    "get_escrow_networks",
+    "has_escrow_support",
+    "DEFAULT_NETWORK",
+    "DEFAULT_TOKEN",
+    # Escrow signing (ADR-002 sign-on-assignment)
+    "build_escrow_pre_auth",
+    "compute_escrow_nonce",
+    # Metered payment over a channel (payment_streaming)
+    "MeteredChannel",
+    "MeteredChannelError",
+    "MeteredChannelUnavailable",
+    "streaming_requested",
+    "UNIT_SECONDS",
+    "COUNT_UNITS",
+    # Wallet adapter (optional — requires uvd-x402-sdk[wallet])
+    "WalletAdapter",
+    "EnvKeyAdapter",
+    "OWSWalletAdapter",
+]
