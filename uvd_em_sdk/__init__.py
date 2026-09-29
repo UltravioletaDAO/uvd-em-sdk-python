@@ -7,6 +7,9 @@ generated from the backend (``mcp_server/models.py`` of Execution Market) by
 that backend source is present (skipped otherwise).
 """
 
+# First on purpose: importing _deps refuses an uvd-x402-sdk older than 0.93.0,
+# naming the fix, before any module below imports from it.
+from . import _deps  # noqa: F401
 from .client import EMClient
 from .models import (
     Task,
@@ -78,11 +81,8 @@ from .metered_channel import (
     streaming_requested,
 )
 
-# Wallet adapter (optional — requires uvd-x402-sdk[wallet]>=0.34.0)
-try:
-    from uvd_x402_sdk.wallet import WalletAdapter, EnvKeyAdapter, OWSWalletAdapter
-except ImportError:
-    pass
+# Wallet adapters — uvd-x402-sdk[wallet] is a hard dependency since 0.9.0.
+from uvd_x402_sdk.wallet import WalletAdapter, EnvKeyAdapter, OWSWalletAdapter
 
 # SINGLE SOURCE OF TRUTH for the SDK version (SDK-51):
 # - pyproject.toml derives it at build time ([tool.hatch.version])
@@ -165,7 +165,7 @@ __all__ = [
     "streaming_requested",
     "UNIT_SECONDS",
     "COUNT_UNITS",
-    # Wallet adapter (optional — requires uvd-x402-sdk[wallet])
+    # Wallet adapters (re-exported from uvd_x402_sdk.wallet)
     "WalletAdapter",
     "EnvKeyAdapter",
     "OWSWalletAdapter",

@@ -39,9 +39,11 @@ automatically, including on retries).
 Wire format: pinned by F3-1 (``shared/test-vectors/erc8128.json``) —
 ``alg="eip191"`` emitted, keyid ALWAYS lowercase, params in the order
 ``created;expires;nonce;keyid;alg``. The CANONICAL signer of the fleet is
-``uvd_x402_sdk.erc8128`` (F3-2, uvd-x402-sdk >= 0.34.0). uvd-x402-sdk stays
-the optional ``[wallet]`` extra, so this module keeps its own implementation:
-a base install (httpx + pydantic only) must import it without the SDK.
+``uvd_x402_sdk.erc8128`` (F3-2, uvd-x402-sdk >= 0.34.0). uvd-x402-sdk was
+the optional ``[wallet]`` extra until 0.8.0, so this module kept its own
+implementation for a base install without the SDK; since 0.9.0 the SDK is a
+hard dependency, and the local fallback stays until the signer is delegated
+(``docs/signer-comparison.md``).
 Delegation happens only where behavior is indistinguishable —
 :func:`fetch_nonce` is re-exported from the canonical module when the SDK is
 importable (fallback below otherwise); :func:`sign_request` stays local
@@ -199,7 +201,8 @@ async def fetch_nonce(api_base: str, timeout: float = 10.0) -> str:
 # F3-2 delegation: uvd-x402-sdk >= 0.34.0 ships the canonical
 # ``uvd_x402_sdk.erc8128``. ``fetch_nonce`` is a pure re-export (no time
 # dependency, byte-identical behavior); the definition above is the fallback
-# for base installs without the [wallet] extra (or SDKs < 0.34.0).
+# for an environment without the SDK, which 0.9.0 no longer allows (the
+# package imports the SDK first).
 # ``sign_request`` is NOT delegated — see the module docstring.
 try:
     from uvd_x402_sdk.erc8128 import fetch_nonce as fetch_nonce  # noqa: F811

@@ -13,7 +13,10 @@ reference) — the three implementations must agree byte-for-byte.
 The frozen-build tests monkeypatch ``time.time`` and ``secrets.token_hex``
 (the builder reads now/salt internally, without parameters) and sign with the
 fixture's synthetic test key: the RFC 6979 deterministic signature must equal
-the fixture's expected bytes in eth_account and viem alike.
+the fixture's expected bytes in eth_account and viem alike. Since 0.9.0 the
+builder is ``uvd_x402_sdk.escrow_signing`` (re-exported here), so that is the
+module whose ``time`` and ``secrets`` get frozen; patching
+``uvd_em_sdk.escrow_signing`` would no longer reach the code that reads them.
 
 NOTE: hex values >= 32 bytes are stored in the fixture WITHOUT the ``0x``
 prefix — the repo's pre-commit secret scanner blocks any literal ``0x`` + 64
@@ -26,9 +29,9 @@ import types
 from pathlib import Path
 
 import pytest
+import uvd_x402_sdk.escrow_signing as escrow_impl
 from eth_account import Account
 
-import uvd_em_sdk.escrow_signing as escrow_mod
 from uvd_em_sdk.escrow_signing import (
     ESCROW_TIER_WINDOWS,
     REFUND_WINDOW_SEC,
@@ -145,9 +148,10 @@ def wallet():
     return FakeWallet()
 
 
+# 0.9.0: frozen on the implementation module (see the module docstring).
 @pytest.fixture
 def frozen_time(monkeypatch):
-    monkeypatch.setattr(escrow_mod, "time", types.SimpleNamespace(time=lambda: NOW))
+    monkeypatch.setattr(escrow_impl, "time", types.SimpleNamespace(time=lambda: NOW))
     return NOW
 
 
@@ -155,7 +159,7 @@ def frozen_time(monkeypatch):
 def frozen_salt(monkeypatch):
     salt_hex = FROZEN["salt"].removeprefix("0x")
     monkeypatch.setattr(
-        escrow_mod,
+        escrow_impl,
         "secrets",
         types.SimpleNamespace(token_hex=lambda n: salt_hex[: 2 * n]),
     )

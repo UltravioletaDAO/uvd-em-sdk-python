@@ -31,13 +31,15 @@ and `from em_plugin_sdk import ...` becomes `from uvd_em_sdk import ...`.
 
 ```bash
 pip install uvd-em-sdk
-
-# The [wallet] extra is required for production auth — every write is signed.
-pip install "uvd-em-sdk[wallet]"
 ```
 
-Optional extras: `[wallet]` (ERC-8128 + escrow signing), `[realtime]`
-(WebSocket), `[all]`, `[dev]`.
+Signing is included. [`uvd-x402-sdk[wallet]`](https://pypi.org/project/uvd-x402-sdk/)
+(`>=0.93.0,<0.94`) is a dependency, not an extra: its wallet adapters sign
+every production write (ERC-8128), and its `uvd_x402_sdk.escrow_signing` is the
+escrow signature this package re-exports. The `[wallet]` extra of
+`em-plugin-sdk` is gone.
+
+Optional extras: `[realtime]` (WebSocket), `[all]`, `[dev]`.
 
 From a checkout, for contributors:
 
@@ -58,7 +60,7 @@ runs with `EM_API_KEYS_ENABLED=false` and answers `403` to every bearer token
 import asyncio
 
 from uvd_em_sdk import CreateTaskParams, EMClient, EvidenceType, TaskCategory
-from uvd_x402_sdk.wallet import EnvKeyAdapter  # pip install "uvd-em-sdk[wallet]"
+from uvd_x402_sdk.wallet import EnvKeyAdapter  # installed with uvd-em-sdk
 
 
 async def main():
@@ -100,7 +102,7 @@ Production runs with `EM_API_KEYS_ENABLED=false` — **API keys are rejected
 | Supabase JWT (human sessions) | `EMClient(supabase_jwt="eyJ...")` | `client.h2a.*` (publisher) and worker-scoped reads/writes (`workers.my_submission`, `submissions.get`, ...) |
 
 ```python
-from uvd_x402_sdk.wallet import EnvKeyAdapter  # pip install "uvd-em-sdk[wallet]"
+from uvd_x402_sdk.wallet import EnvKeyAdapter  # installed with uvd-em-sdk
 
 async with EMClient(wallet=EnvKeyAdapter()) as client:  # key from env, never hardcoded
     await client.identity.register("my-agent")
@@ -213,6 +215,13 @@ payment_auth = build_escrow_pre_auth(
 )
 await client.h2a.assign(task_id, executor_id, payment_auth=payment_auth)
 ```
+
+`build_escrow_pre_auth` is `uvd_x402_sdk.escrow_signing.build_escrow_pre_auth`,
+re-exported (so is the rest of `uvd_em_sdk.escrow_signing`): one implementation
+of the escrow signature, not a copy. Against the copy `em-plugin-sdk` 0.8.0
+carried, it refuses a USDC domain or a `PaymentInfo` typehash that is not the
+on-chain one, converts the amount exactly (`0.3 - 0.1` -> `200000` base units)
+and passes `primaryType` to the wallet; the module docstring lists the details.
 
 Escrow-capable networks = escrow contract AND deployed operator
 (`uvd_em_sdk.networks.has_escrow_support`). The network registry is a

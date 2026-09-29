@@ -14,7 +14,7 @@ Resource-based namespacing (Stripe pattern)::
         # Workers
         worker = await client.workers.register(wallet_address="0x...")
 
-    # With wallet adapter (optional — requires uvd-x402-sdk[wallet])::
+    # With a wallet adapter (uvd-x402-sdk, a dependency)::
     from uvd_x402_sdk.wallet import EnvKeyAdapter
     wallet = EnvKeyAdapter()
 
@@ -28,7 +28,8 @@ from typing import Any, Optional
 
 import httpx
 
-# Wallet adapter (optional — requires uvd-x402-sdk[wallet]>=0.20.0)
+# Wallet adapter. uvd-x402-sdk is a hard dependency since 0.9.0 and the
+# package imports it first (_deps.py), so the except branch no longer runs.
 try:
     from uvd_x402_sdk.wallet import WalletAdapter
 except ImportError:
@@ -74,7 +75,7 @@ class EMClient:
             which rejects every API key with HTTP 403 (INC-2026-03-27).
             Attach a *wallet* for production writes.
         wallet: Optional :class:`~uvd_x402_sdk.wallet.WalletAdapter` for wallet-based
-            signing (ERC-8128, EIP-3009).  Requires ``uvd-x402-sdk[wallet]>=0.20.0``.
+            signing (ERC-8128, EIP-3009).  Provided by ``uvd-x402-sdk``.
             When provided without *api_key*, every non-GET request is signed
             per ERC-8128 (RFC 9421): a fresh single-use nonce is fetched from
             ``GET /auth/erc8128/nonce`` and ``Signature`` / ``Signature-Input``

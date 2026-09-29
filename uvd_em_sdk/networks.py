@@ -367,15 +367,16 @@ def supports_rater_authorship(network: str) -> bool:
     while everything reports success. That is the exact confusion this rail
     exists to remove, so it must not be reachable by accident.
 
-    Install the extra: ``pip install "uvd-em-sdk[wallet]"``.
+    ``uvd-x402-sdk`` is a hard dependency since 0.9.0 (the package imports it
+    first), so a working install no longer reaches this branch.
     """
     try:
         from uvd_x402_sdk.erc8004 import supports_relayed_feedback
     except ImportError as exc:  # pragma: no cover - depends on install extras
         raise RaterAuthorshipUnknown(
             "Cannot determine rater-authorship support for "
-            f"{network!r}: uvd-x402-sdk is not installed. Install "
-            "uvd-em-sdk[wallet], or ask the server: GET "
+            f"{network!r}: uvd-x402-sdk is not installed. Reinstall "
+            "uvd-em-sdk with its dependencies, or ask the server: GET "
             "/api/v1/reputation/networks exposes rater_authored_ratings per "
             "network. Do NOT treat this as 'unsupported' — falling back to the "
             "legacy path puts the sponsor's address on your rating."

@@ -1,8 +1,10 @@
 """F3-2 canonical parity — uvd_em_sdk.erc8128 vs uvd_x402_sdk.erc8128.
 
 uvd-x402-sdk >= 0.34.0 ships the canonical ERC-8128 signer; this module keeps
-a local twin because the SDK remains the optional ``[wallet]`` extra. These
-tests enforce the F3-2 block (a) contract:
+a local twin because the SDK was the optional ``[wallet]`` extra until 0.8.0
+(a hard dependency since 0.9.0; the twin goes when the signer is delegated,
+``docs/signer-comparison.md``). These tests enforce the F3-2 block (a)
+contract:
 
   1. ``fetch_nonce`` delegates to the canonical module when the SDK is
      importable (pure re-export).

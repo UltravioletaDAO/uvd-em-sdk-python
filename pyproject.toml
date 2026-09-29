@@ -42,23 +42,23 @@ classifiers = [
 dependencies = [
     "httpx>=0.25.0",
     "pydantic>=2.0",
+    # HARD dependency since 0.9.0 (it was the optional [wallet] extra): the
+    # escrow signature is uvd_x402_sdk.escrow_signing, re-exported by
+    # uvd_em_sdk.escrow_signing, and every production write is signed with
+    # its wallet adapters. [wallet] brings eth-account (eth-abi, eth-utils).
+    # The floor is the release whose escrow_signing API is stable; the
+    # ceiling keeps the next minor out until this suite has run against it
+    # -- this library signs money orders, so a foreign release must not
+    # arrive on its own. uvd_em_sdk/_deps.py re-checks the floor at import;
+    # tests/test_dependencies.py pins both ends here and there.
+    "uvd-x402-sdk[wallet]>=0.93.0,<0.94",
 ]
 
 [project.optional-dependencies]
-# uvd-x402-sdk va CLAVADO, como ruff aca abajo y por una razon mas cara: es la
-# libreria que firma ordenes de dinero (EIP-3009 y la LifecycleOrder EIP-712).
-# Con un rango abierto, una release ajena entra sola en el proximo install y
-# puede poner rojo a main sin que nadie toque el rail — paso el 2026-09-07 con
-# 0.80.0. Moverlo exige correr el gate de c0der/config/pins.toml
-# (dao/execution-market, pypi) antes y despues, en los tres lugares a la vez.
-wallet = [
-    "uvd-x402-sdk[wallet]==0.91.2",
-]
 realtime = [
     "websockets>=12.0",
 ]
 all = [
-    "uvd-x402-sdk[wallet]==0.91.2",
     "websockets>=12.0",
 ]
 dev = [
@@ -66,7 +66,6 @@ dev = [
     "pytest-asyncio>=0.23",
     "respx>=0.21",
     "websockets>=12.0",
-    "uvd-x402-sdk[wallet]==0.91.2",
     # Pinned like the backend job: an open range let 0.16.0 in (2026-07-23)
     # and its formatter reflows code no one touched, so CI fails on unrelated
     # PRs. Bumping the pin requires reformatting the package in the same PR.

@@ -143,8 +143,10 @@ def test_readme_gives_the_install_that_actually_works():
     """
     text = README.read_text(encoding="utf-8")
     assert "pip install uvd-em-sdk" in text
-    # Production auth is signed; the bare install cannot sign anything.
-    assert 'pip install "uvd-em-sdk[wallet]"' in text
+    # 0.9.0: uvd-x402-sdk[wallet] is a hard dependency, so the bare install
+    # signs, and the [wallet] extra is gone. Advising it now would only earn
+    # the reader a pip warning ("does not provide the extra 'wallet'").
+    assert "uvd-em-sdk[wallet]" not in text
     # The package left the private monorepo for its own repository, so the
     # "the source is private" warning this test used to require is gone.
     # What a reader of the old name needs instead is the way over.
