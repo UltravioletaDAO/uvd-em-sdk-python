@@ -1,4 +1,4 @@
-"""F3-2 canonical parity — em_plugin_sdk.erc8128 vs uvd_x402_sdk.erc8128.
+"""F3-2 canonical parity — uvd_em_sdk.erc8128 vs uvd_x402_sdk.erc8128.
 
 uvd-x402-sdk >= 0.34.0 ships the canonical ERC-8128 signer; this module keeps
 a local twin because the SDK remains the optional ``[wallet]`` extra. These
@@ -32,7 +32,7 @@ canonical_mod = pytest.importorskip(
 
 from uvd_x402_sdk.wallet import EnvKeyAdapter  # noqa: E402
 
-import em_plugin_sdk.erc8128 as plugin_mod  # noqa: E402
+import uvd_em_sdk.erc8128 as plugin_mod  # noqa: E402
 
 _VECTORS_PATH = (
     Path(__file__).resolve().parents[2] / "shared" / "test-vectors" / "erc8128.json"

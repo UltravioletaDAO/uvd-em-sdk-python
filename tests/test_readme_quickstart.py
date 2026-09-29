@@ -1,6 +1,6 @@
 """The README quick-start must run as written (SDK-54).
 
-Mirrors the "Quick Start" snippet of ``em-plugin-sdk/README.md`` against
+Mirrors the "Quick Start" snippet of ``README.md`` against
 respx — if the snippet references a method that does not exist, this file
 stops compiling/passing. Also greps the README for the flat client methods
 removed in the Phase 2 Stripe refactor.
@@ -15,7 +15,7 @@ import respx
 from eth_account import Account
 from uvd_x402_sdk.wallet import EnvKeyAdapter
 
-from em_plugin_sdk import CreateTaskParams, EMClient, EvidenceType, TaskCategory
+from uvd_em_sdk import CreateTaskParams, EMClient, EvidenceType, TaskCategory
 
 from tests.removed_methods import REMOVED_FLAT_METHODS
 
@@ -132,7 +132,7 @@ def test_readme_mentions_no_removed_flat_methods():
 def test_readme_gives_the_install_that_actually_works():
     """D-03, decided the other way on 2026-09-21: the package IS on PyPI.
 
-    This test used to assert the opposite (`"pip install em-plugin-sdk" not in
+    This test used to assert the opposite (`"pip install uvd-em-sdk" not in
     text`) and it was right to: until the release existed, that command 404'd,
     and a README is the first thing a consumer runs. Now the release is the
     supported path, so the same test guards the same property from the other
@@ -142,10 +142,11 @@ def test_readme_gives_the_install_that_actually_works():
     project page says, and a published version cannot be replaced.
     """
     text = README.read_text(encoding="utf-8")
-    assert "pip install em-plugin-sdk" in text
+    assert "pip install uvd-em-sdk" in text
     # Production auth is signed; the bare install cannot sign anything.
-    assert 'pip install "em-plugin-sdk[wallet]"' in text
-    # The monorepo is private, so the git URL and the Repository link fail for
-    # anyone outside the org. The README has to say so instead of leaving a
-    # 404 to be discovered.
-    assert "private" in text
+    assert 'pip install "uvd-em-sdk[wallet]"' in text
+    # The package left the private monorepo for its own repository, so the
+    # "the source is private" warning this test used to require is gone.
+    # What a reader of the old name needs instead is the way over.
+    assert "em-plugin-sdk" in text
+    assert "pip uninstall em-plugin-sdk" in text

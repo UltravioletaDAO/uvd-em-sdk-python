@@ -1,7 +1,7 @@
 """Worker agent — browse tasks, apply, submit evidence."""
 
 import asyncio
-from em_plugin_sdk import EMClient, SubmitEvidenceParams
+from uvd_em_sdk import EMClient, SubmitEvidenceParams
 
 
 async def main():

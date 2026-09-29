@@ -201,7 +201,7 @@ class H2AResource:
         authorization for THIS worker, sent as the ``X-Payment-Auth``
         header. Without it the backend answers **402** and nothing is
         assigned. Build it with
-        :func:`~em_plugin_sdk.build_escrow_pre_auth` from the config
+        :func:`~uvd_em_sdk.build_escrow_pre_auth` from the config
         returned by :meth:`payment_config`.
 
         >>> PROTOCOL CONSTRAINT (ADR-002, verbatim) <<<
@@ -218,7 +218,7 @@ class H2AResource:
             task_id: The H2A task (must be ``published``).
             executor_id: A worker who applied to the task.
             payment_auth: Raw JSON ``X-Payment-Auth`` value (output of
-                :func:`~em_plugin_sdk.build_escrow_pre_auth`). Required for
+                :func:`~uvd_em_sdk.build_escrow_pre_auth`). Required for
                 escrow-mode tasks; ignored for legacy tasks.
         """
         headers = self._auth_headers() or {}
@@ -376,8 +376,8 @@ class H2AResource:
         sign-on-assignment EIP-3009 authorization. Public endpoint.
 
         Returns:
-            :class:`~em_plugin_sdk.PaymentConfig` — pass it (or its
-            ``model_dump()``) to :func:`~em_plugin_sdk.build_escrow_pre_auth`.
+            :class:`~uvd_em_sdk.PaymentConfig` — pass it (or its
+            ``model_dump()``) to :func:`~uvd_em_sdk.build_escrow_pre_auth`.
         """
         data = await self._client._request("GET", "/h2a/payment-config")
         return PaymentConfig.model_validate(data)

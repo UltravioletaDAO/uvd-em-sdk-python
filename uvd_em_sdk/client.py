@@ -147,7 +147,7 @@ class EMClient:
 
         headers: dict[str, str] = {
             "Content-Type": "application/json",
-            "User-Agent": f"em-plugin-sdk/{__version__}",
+            "User-Agent": f"uvd-em-sdk/{__version__}",
         }
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"

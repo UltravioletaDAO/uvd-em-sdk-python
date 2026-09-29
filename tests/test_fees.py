@@ -2,14 +2,14 @@
 
 import pytest
 
-from em_plugin_sdk.fees import (
+from uvd_em_sdk.fees import (
     calculate_fee,
     calculate_reverse_fee,
     get_fee_rate,
     FEE_BPS,
     MAX_FEE_BPS,
 )
-from em_plugin_sdk.models import TaskCategory
+from uvd_em_sdk.models import TaskCategory
 
 
 class TestFeeConstants:

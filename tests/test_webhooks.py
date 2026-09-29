@@ -7,7 +7,7 @@ import pytest
 import httpx
 import respx
 
-from em_plugin_sdk import EMClient
+from uvd_em_sdk import EMClient
 
 BASE = "https://api.execution.market/api/v1"
 
@@ -115,7 +115,7 @@ class TestWebhookSignature:
             f"{timestamp}.".encode() + body,
             hashlib.sha256,
         ).hexdigest()
-        from em_plugin_sdk.resources.webhooks import WebhooksResource
+        from uvd_em_sdk.resources.webhooks import WebhooksResource
 
         assert (
             WebhooksResource.verify_signature(body, signature, timestamp, secret)
@@ -123,7 +123,7 @@ class TestWebhookSignature:
         )
 
     def test_verify_invalid_signature(self):
-        from em_plugin_sdk.resources.webhooks import WebhooksResource
+        from uvd_em_sdk.resources.webhooks import WebhooksResource
 
         assert (
             WebhooksResource.verify_signature(b"body", "invalid", "123", "secret")

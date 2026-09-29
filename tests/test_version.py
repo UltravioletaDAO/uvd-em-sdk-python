@@ -14,14 +14,14 @@ try:  # tomllib is stdlib from Python 3.11; the SDK supports >=3.10
 except ModuleNotFoundError:  # pragma: no cover - py3.10 fallback
     tomllib = None
 
-import em_plugin_sdk
-from em_plugin_sdk import EMClient
+import uvd_em_sdk
+from uvd_em_sdk import EMClient
 
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
 
 def test_version_is_semver():
-    assert re.fullmatch(r"\d+\.\d+\.\d+", em_plugin_sdk.__version__)
+    assert re.fullmatch(r"\d+\.\d+\.\d+", uvd_em_sdk.__version__)
 
 
 def test_version_consistency():
@@ -30,7 +30,7 @@ def test_version_consistency():
     client = EMClient()
     assert (
         client._default_headers()["User-Agent"]
-        == f"em-plugin-sdk/{em_plugin_sdk.__version__}"
+        == f"uvd-em-sdk/{uvd_em_sdk.__version__}"
     )
 
     # 2. pyproject.toml has NO literal version — it derives from __init__
@@ -39,14 +39,14 @@ def test_version_consistency():
         data = tomllib.loads(raw)
         assert "version" in data["project"]["dynamic"]
         assert "version" not in data["project"]
-        assert data["tool"]["hatch"]["version"]["path"] == "em_plugin_sdk/__init__.py"
+        assert data["tool"]["hatch"]["version"]["path"] == "uvd_em_sdk/__init__.py"
     else:  # pragma: no cover - py3.10 fallback
         assert 'dynamic = ["version"]' in raw
-        assert 'path = "em_plugin_sdk/__init__.py"' in raw
+        assert 'path = "uvd_em_sdk/__init__.py"' in raw
 
 
-def test_current_version_is_0_8_0():
-    """v0.8.0 = F3-2: uvd_x402_sdk.erc8128 (>= 0.34.0) is the canonical
-    signer; fetch_nonce delegates when the [wallet] extra is present, the
-    local twin stays as base-install fallback (canonical-parity tested)."""
-    assert em_plugin_sdk.__version__ == "0.8.0"
+def test_current_version_is_0_9_0():
+    """v0.9.0 = the package leaves the Execution Market monorepo under its
+    own name and import path, ``uvd_em_sdk`` / ``uvd-em-sdk`` (the 0.8.0
+    API, renamed; see CHANGELOG.md)."""
+    assert uvd_em_sdk.__version__ == "0.9.0"

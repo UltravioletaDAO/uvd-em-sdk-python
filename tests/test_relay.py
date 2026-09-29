@@ -4,7 +4,7 @@ import pytest
 import httpx
 import respx
 
-from em_plugin_sdk import EMClient
+from uvd_em_sdk import EMClient
 
 BASE = "https://api.execution.market/api/v1"
 

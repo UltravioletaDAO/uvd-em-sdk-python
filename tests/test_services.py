@@ -6,7 +6,7 @@ import pytest
 import httpx
 import respx
 
-from em_plugin_sdk import EMClient
+from uvd_em_sdk import EMClient
 
 BASE = "https://api.execution.market/api/v1"
 
@@ -282,7 +282,7 @@ class TestServiceOrder:
         assert order.escrow_status == "assigning"
 
     async def test_order_price_mismatch_raises(self, mock_router, client):
-        from em_plugin_sdk import EMValidationError
+        from uvd_em_sdk import EMValidationError
 
         mock_router.post(f"/services/{LISTING_ID}/order").mock(
             return_value=httpx.Response(

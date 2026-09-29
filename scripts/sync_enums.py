@@ -11,7 +11,7 @@ fixed. Per-SDK parity tests (``tests/test_enums_sync.py`` in each SDK)
 enforce equality on every pytest run.
 
 Targets:
-  - ``em_plugin_sdk/models.py``            (canonical client stack)
+  - ``uvd_em_sdk/models.py``            (canonical client stack)
   - ``sdk/python/execution_market/types.py`` (OWS signer + legacy shim)
 
 Client extras: values the backend API emits but its enum predates
@@ -22,7 +22,7 @@ extra is retired.
 
 ``DisputeReason`` is NOT synced — it mirrors migration 004, not models.py.
 
-Usage (from ``em-plugin-sdk/``)::
+Usage (from the repository root)::
 
     python scripts/sync_enums.py            # rewrite both regions
     python scripts/sync_enums.py --check    # exit 1 on drift (CI)
@@ -44,7 +44,7 @@ SDK_ROOT = SCRIPT_DIR.parent
 REPO_ROOT = SDK_ROOT.parent
 DEFAULT_BACKEND = REPO_ROOT / "mcp_server" / "models.py"
 
-BEGIN_MARKER = "# --- BEGIN GENERATED: ENUMS (em-plugin-sdk/scripts/sync_enums.py) ---"
+BEGIN_MARKER = "# --- BEGIN GENERATED: ENUMS (uvd-em-sdk/scripts/sync_enums.py) ---"
 END_MARKER = "# --- END GENERATED: ENUMS ---"
 
 
@@ -67,7 +67,7 @@ class Target:
 
 TARGETS: dict[str, Target] = {
     "plugin": Target(
-        path=SDK_ROOT / "em_plugin_sdk" / "models.py",
+        path=SDK_ROOT / "uvd_em_sdk" / "models.py",
         enums=("TaskStatus", "TaskCategory", "EvidenceType", "TargetExecutorType"),
     ),
     "sdk-python": Target(

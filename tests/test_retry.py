@@ -3,7 +3,7 @@
 ONE decision table (status/exception -> retry yes/no) run against the three
 client-side implementations:
 
-  1. ``em_plugin_sdk.retry.request_with_retry``  (canonical)
+  1. ``uvd_em_sdk.retry.request_with_retry``  (canonical)
   2. ``execution_market._signer.with_backoff``   (sdk/python, zero-dep)
   3. ``em_cli.api.EMAPIClient._request_with_retry`` (CLI)
 
@@ -25,7 +25,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from em_plugin_sdk.retry import request_with_retry
+from uvd_em_sdk.retry import request_with_retry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SDK_PY = REPO_ROOT / "sdk" / "python"
@@ -89,7 +89,7 @@ def _status_error(status: int, body: dict | None = None) -> httpx.HTTPStatusErro
 
 
 # ---------------------------------------------------------------------------
-# 1. Canonical — em_plugin_sdk.retry.request_with_retry
+# 1. Canonical — uvd_em_sdk.retry.request_with_retry
 # ---------------------------------------------------------------------------
 
 

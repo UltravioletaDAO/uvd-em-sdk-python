@@ -2,11 +2,11 @@
 
 Requires the ``websockets`` package (optional dependency)::
 
-    pip install em-plugin-sdk[realtime]
+    pip install uvd-em-sdk[realtime]
 
 Usage::
 
-    from em_plugin_sdk.realtime import EMEventClient, EventType
+    from uvd_em_sdk.realtime import EMEventClient, EventType
 
     async with EMEventClient(api_key="em_...") as ws:
         await ws.watch_task("task-uuid")
@@ -70,7 +70,7 @@ class EMEventClient:
         except ImportError:
             raise ImportError(
                 "websockets is required for real-time features. "
-                "Install with: pip install em-plugin-sdk[realtime]"
+                "Install with: pip install uvd-em-sdk[realtime]"
             )
 
         self._cfg = _Config(

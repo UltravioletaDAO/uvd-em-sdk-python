@@ -82,7 +82,7 @@ class ServicesResource:
             description: 20-5000 chars. Copied into the per-order task
                 instructions, so write it as the delivery contract.
             category: Task category (reuses the demand-side enum, e.g.
-                :class:`~em_plugin_sdk.TaskCategory`).
+                :class:`~uvd_em_sdk.TaskCategory`).
             unit_price_usd: Price per order, 0 < price <= 100. Authoritative
                 — a buyer pays exactly this at order time.
             skills: Up to 20 skills (50 chars each) for any-match browse
@@ -308,7 +308,7 @@ class ServicesResource:
             listing_id: Listing to buy (404 unknown, 409 if not ``active``).
             payment_auth: Escrow authorization signed for the SELLER's
                 wallet as receiver, sent as ``X-Payment-Auth``. Build it
-                with :func:`~em_plugin_sdk.build_escrow_pre_auth` using the
+                with :func:`~uvd_em_sdk.build_escrow_pre_auth` using the
                 listing's ``seller_wallet``, the listing price and the
                 network you pass in ``payment_network``. Required for the
                 escrow lock — the assign handler rejects an escrow-mode

@@ -1,7 +1,7 @@
 """FastAPI webhook receiver with HMAC signature verification."""
 
 from fastapi import FastAPI, Request, HTTPException
-from em_plugin_sdk.resources.webhooks import WebhooksResource
+from uvd_em_sdk.resources.webhooks import WebhooksResource
 
 app = FastAPI()
 WEBHOOK_SECRET = "whsec_your_secret_here"

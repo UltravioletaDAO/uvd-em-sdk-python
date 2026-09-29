@@ -1,7 +1,7 @@
 """Quick start — publish a task, wait for submission, approve it."""
 
 import asyncio
-from em_plugin_sdk import (
+from uvd_em_sdk import (
     EMClient,
     CreateTaskParams,
     TaskCategory,

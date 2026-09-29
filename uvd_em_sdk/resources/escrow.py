@@ -14,7 +14,7 @@ class EscrowResource:
     **Auth model**: writes (:meth:`release`, :meth:`refund`,
     :meth:`update_task_escrow`) are verified server-side with
     ``verify_agent_auth_write`` — in production that means ERC-8128 wallet
-    signing (attach a ``WalletAdapter`` to :class:`~em_plugin_sdk.EMClient`;
+    signing (attach a ``WalletAdapter`` to :class:`~uvd_em_sdk.EMClient`;
     API keys are rejected with ``EM_API_KEYS_ENABLED=false``). Reads are
     public.
 
@@ -53,7 +53,7 @@ class EscrowResource:
 
         ``GET /escrow/payment-extension`` — **410 Gone** on the live server:
         payment extensions were deprecated when everything moved to the
-        x402 SDK + Facilitator. Raises :class:`~em_plugin_sdk.EMError`
+        x402 SDK + Facilitator. Raises :class:`~uvd_em_sdk.EMError`
         (status 410) against production.
         """
         return await self._client._request("GET", "/escrow/payment-extension")

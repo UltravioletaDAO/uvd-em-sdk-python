@@ -1,7 +1,7 @@
 """Offline fee calculator — no network calls needed."""
 
-from em_plugin_sdk import calculate_fee, calculate_reverse_fee, get_fee_rate
-from em_plugin_sdk import is_valid_pair, get_supported_tokens, get_escrow_networks
+from uvd_em_sdk import calculate_fee, calculate_reverse_fee, get_fee_rate
+from uvd_em_sdk import is_valid_pair, get_supported_tokens, get_escrow_networks
 
 # Calculate what a worker receives from a $10 bounty
 fee = calculate_fee(10.00, "physical_presence")

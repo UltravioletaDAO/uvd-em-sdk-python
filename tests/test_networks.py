@@ -1,6 +1,6 @@
 """Tests for the static network/token registry."""
 
-from em_plugin_sdk.networks import (
+from uvd_em_sdk.networks import (
     NETWORKS,
     get_network,
     get_enabled_networks,

@@ -1,10 +1,10 @@
-"""Execution Market Plugin SDK — THE canonical Python client for the EM REST API.
+"""uvd-em-sdk — THE canonical Python client for the Execution Market REST API.
 
-Declared canonical in F3-6: the other in-repo Python stacks are either a
-thin facade over it or reduced to the OWS ERC-8128 signer
-(``sdk/python/execution_market``, kept as a compatibility shim). Enums are
-generated from the backend (``mcp_server/models.py``) by
-``scripts/sync_enums.py``; ``tests/test_enums_sync.py`` enforces parity.
+Formerly ``em-plugin-sdk`` inside the Execution Market monorepo (0.8.0 was
+its last release there); 0.9.0 is the same API under this name. Enums are
+generated from the backend (``mcp_server/models.py`` of Execution Market) by
+``scripts/sync_enums.py``; ``tests/test_enums_sync.py`` enforces parity where
+that backend source is present (skipped otherwise).
 """
 
 from .client import EMClient
@@ -88,7 +88,7 @@ except ImportError:
 # - pyproject.toml derives it at build time ([tool.hatch.version])
 # - client.py derives the User-Agent from it at runtime
 # Bump it HERE only; test_version.py enforces consistency.
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 __all__ = [
     # Client

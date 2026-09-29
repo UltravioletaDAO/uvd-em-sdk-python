@@ -33,7 +33,7 @@ from decimal import Decimal
 import httpx
 import pytest
 
-from em_plugin_sdk.metered_channel import (
+from uvd_em_sdk.metered_channel import (
     ChannelClosedByServer,
     MeteredChannel,
     MeteredChannelError,

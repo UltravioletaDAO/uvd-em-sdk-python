@@ -2,7 +2,7 @@
 
 Usage::
 
-    from em_plugin_sdk.testing import MockEMClient
+    from uvd_em_sdk.testing import MockEMClient
 
     async def test_my_agent():
         client = MockEMClient()

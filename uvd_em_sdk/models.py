@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 
-# --- BEGIN GENERATED: ENUMS (em-plugin-sdk/scripts/sync_enums.py) ---
+# --- BEGIN GENERATED: ENUMS (uvd-em-sdk/scripts/sync_enums.py) ---
 class TaskStatus(str, Enum):
     """Task lifecycle states (synced from ``mcp_server/models.py``)."""
 
@@ -377,7 +377,7 @@ class PaymentConfig(BaseModel):
     Treasury + fee percent + the per-network escrow parameters the publisher
     needs to build the EIP-3009 escrow authorization at ASSIGNMENT time
     (all public on-chain constants). Feed the raw dict (``model_dump()``)
-    or this model directly to :func:`~em_plugin_sdk.build_escrow_pre_auth`.
+    or this model directly to :func:`~uvd_em_sdk.build_escrow_pre_auth`.
     """
 
     treasury: str

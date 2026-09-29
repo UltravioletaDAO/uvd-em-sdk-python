@@ -1,6 +1,6 @@
 """Tests for the realtime module — event types and room helpers."""
 
-from em_plugin_sdk.realtime.event_types import (
+from uvd_em_sdk.realtime.event_types import (
     EventType,
     task_room,
     user_room,
@@ -56,13 +56,13 @@ class TestRoomHelpers:
 class TestWSClientImport:
     def test_can_import_event_client(self):
         """EMEventClient can be imported (websockets is installed in dev)."""
-        from em_plugin_sdk.realtime import EMEventClient
+        from uvd_em_sdk.realtime import EMEventClient
 
         assert EMEventClient is not None
 
     def test_constructor_needs_no_args(self):
         """Client can be instantiated with defaults."""
-        from em_plugin_sdk.realtime import EMEventClient
+        from uvd_em_sdk.realtime import EMEventClient
 
         client = EMEventClient()
         assert client.is_connected is False

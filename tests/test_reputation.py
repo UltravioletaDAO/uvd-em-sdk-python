@@ -6,7 +6,7 @@ import pytest
 import httpx
 import respx
 
-from em_plugin_sdk import EMClient
+from uvd_em_sdk import EMClient
 
 BASE = "https://api.execution.market/api/v1"
 
@@ -352,7 +352,7 @@ class TestReputationNetworkPreference:
                 json={"message": "Reputation network preference is not enabled yet"},
             )
         )
-        from em_plugin_sdk import EMError
+        from uvd_em_sdk import EMError
 
         with pytest.raises(EMError) as exc:
             await client.reputation.set_reputation_network(WALLET, "arbitrum")
@@ -578,7 +578,7 @@ class TestRelayedRating:
         """
         import inspect
 
-        from em_plugin_sdk.resources.reputation import ReputationResource
+        from uvd_em_sdk.resources.reputation import ReputationResource
 
         for name in ("prepare_relayed_rating", "submit_relayed_rating"):
             for param in inspect.signature(

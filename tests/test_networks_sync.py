@@ -48,7 +48,7 @@ def test_networks_matches_backend():
 def test_escrow_rule_matches_backend_and():
     """has_escrow_support == (escrow AND operator), per network, exactly as
     the backend computes it."""
-    from em_plugin_sdk.networks import NETWORKS, has_escrow_support
+    from uvd_em_sdk.networks import NETWORKS, has_escrow_support
 
     sync = _load_sync_module()
     config = sync.load_network_config(BACKEND)

@@ -28,7 +28,7 @@ On-chain limits enforced client-side:
 Usage::
 
     from uvd_x402_sdk.wallet import EnvKeyAdapter
-    from em_plugin_sdk.escrow_signing import build_escrow_pre_auth
+    from uvd_em_sdk.escrow_signing import build_escrow_pre_auth
 
     config = await client.h2a.payment_config()   # GET /h2a/payment-config
     payment_auth = build_escrow_pre_auth(
@@ -42,7 +42,7 @@ Usage::
     )
     await client.tasks.assign(task_id, executor_id, payment_auth=payment_auth)
 
-Requires ``pip install em-plugin-sdk[wallet]`` (eth-account pulls in
+Requires ``pip install uvd-em-sdk[wallet]`` (eth-account pulls in
 ``eth_abi`` / ``eth_utils``).
 """
 
@@ -126,7 +126,7 @@ def _require_eth_libs():
     except ImportError as exc:  # pragma: no cover
         raise ImportError(
             "eth-abi / eth-utils are required for escrow signing. "
-            "Install them with: pip install em-plugin-sdk[wallet]"
+            "Install them with: pip install uvd-em-sdk[wallet]"
         ) from exc
     return encode, keccak, to_checksum_address
 

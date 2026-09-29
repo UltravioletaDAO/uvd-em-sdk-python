@@ -1,40 +1,49 @@
-# em-plugin-sdk
+# uvd-em-sdk
 
-**The canonical Python client** for the [Execution Market](https://execution.market)
-REST API — publish tasks, manage workers, sign escrow authorizations, handle
-payments. (The other in-repo Python stack, `sdk/python/execution_market`, is
-reduced to the OWS ERC-8128 signer + a compatibility shim.)
-
-Async, typed (Pydantic v2), resource-namespaced (Stripe pattern). Enums and
-the network registry are generated from the backend source of truth
+**The Python client for the [Execution Market](https://execution.market) REST
+API** — publish tasks, manage workers, sign escrow authorizations, handle
+payments. Async, typed (Pydantic v2), resource-namespaced (Stripe pattern).
+Enums and the network registry are generated from the backend source of truth
 (`scripts/sync_enums.py`, `scripts/sync_networks.py`) with parity tests.
+
+## Replaces `em-plugin-sdk`
+
+`uvd-em-sdk` is the package formerly published as **`em-plugin-sdk`**, moved
+out of the Execution Market monorepo into its own repository and renamed.
+Version 0.9.0 has the API of `em-plugin-sdk` 0.8.0 under the new names:
+
+| | Before | Now |
+|---|---|---|
+| Distribution (`pip install`) | `em-plugin-sdk` | `uvd-em-sdk` |
+| Import package | `em_plugin_sdk` | `uvd_em_sdk` |
+| `User-Agent` | `em-plugin-sdk/<version>` | `uvd-em-sdk/<version>` |
+
+Migrating is a rename:
+
+```bash
+pip uninstall em-plugin-sdk
+pip install uvd-em-sdk
+```
+
+and `from em_plugin_sdk import ...` becomes `from uvd_em_sdk import ...`.
 
 ## Install
 
 ```bash
-pip install em-plugin-sdk
+pip install uvd-em-sdk
 
 # The [wallet] extra is required for production auth — every write is signed.
-pip install "em-plugin-sdk[wallet]"
+pip install "uvd-em-sdk[wallet]"
 ```
 
 Optional extras: `[wallet]` (ERC-8128 + escrow signing), `[realtime]`
 (WebSocket), `[all]`, `[dev]`.
 
-**One thing to know before you follow a link from this page:** the
-`execution-market` monorepo that ships this package is **private**, so the
-`Repository` and `Source` links in the project metadata 404 for anyone outside
-the organisation, and a
-`pip install "git+https://github.com/UltravioletaDAO/execution-market.git#subdirectory=em-plugin-sdk"`
-fails for the same reason — as a git authentication error or a 404, which reads
-like "the package does not exist" rather than "you are not authorized". The
-PyPI release above is the supported install. Questions:
-`dev@ultravioletadao.xyz`.
-
 From a checkout, for contributors:
 
 ```bash
-cd <your-checkout>/execution-market/em-plugin-sdk
+git clone https://github.com/UltravioletaDAO/uvd-em-sdk-python
+cd uvd-em-sdk-python
 pip install -e ".[dev]"
 ```
 
@@ -48,8 +57,8 @@ runs with `EM_API_KEYS_ENABLED=false` and answers `403` to every bearer token
 ```python
 import asyncio
 
-from em_plugin_sdk import CreateTaskParams, EMClient, EvidenceType, TaskCategory
-from uvd_x402_sdk.wallet import EnvKeyAdapter  # pip install "em-plugin-sdk[wallet]"
+from uvd_em_sdk import CreateTaskParams, EMClient, EvidenceType, TaskCategory
+from uvd_x402_sdk.wallet import EnvKeyAdapter  # pip install "uvd-em-sdk[wallet]"
 
 
 async def main():
@@ -91,7 +100,7 @@ Production runs with `EM_API_KEYS_ENABLED=false` — **API keys are rejected
 | Supabase JWT (human sessions) | `EMClient(supabase_jwt="eyJ...")` | `client.h2a.*` (publisher) and worker-scoped reads/writes (`workers.my_submission`, `submissions.get`, ...) |
 
 ```python
-from uvd_x402_sdk.wallet import EnvKeyAdapter  # pip install "em-plugin-sdk[wallet]"
+from uvd_x402_sdk.wallet import EnvKeyAdapter  # pip install "uvd-em-sdk[wallet]"
 
 async with EMClient(wallet=EnvKeyAdapter()) as client:  # key from env, never hardcoded
     await client.identity.register("my-agent")
@@ -189,7 +198,7 @@ Fee model: **flat 13% (1300 bps)**, split atomically on-chain at release.
 > chosen.
 
 ```python
-from em_plugin_sdk import build_escrow_pre_auth
+from uvd_em_sdk import build_escrow_pre_auth
 from uvd_x402_sdk.wallet import EnvKeyAdapter
 
 config = await client.h2a.payment_config()          # per-network escrow params
@@ -206,7 +215,7 @@ await client.h2a.assign(task_id, executor_id, payment_auth=payment_auth)
 ```
 
 Escrow-capable networks = escrow contract AND deployed operator
-(`em_plugin_sdk.networks.has_escrow_support`). The network registry is a
+(`uvd_em_sdk.networks.has_escrow_support`). The network registry is a
 generated snapshot of the backend `NETWORK_CONFIG` — resync with
 `python scripts/sync_networks.py && ruff format .`.
 
@@ -252,8 +261,7 @@ C-Chain refuses EIP-7702, so it cannot).
 ## Development
 
 ```bash
-cd em-plugin-sdk
-pip install -e ".[dev]"
+pip install -e ".[dev]"      # from the repository root
 pytest                       # all tests, offline (respx mocks)
 ruff format . && ruff check .
 ```

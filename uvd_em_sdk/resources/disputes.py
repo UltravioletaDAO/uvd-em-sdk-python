@@ -101,7 +101,7 @@ class DisputesResource:
 
         Args:
             submission_id: UUID of the submission being disputed.
-            reason: One of :class:`~em_plugin_sdk.DisputeReason` (typed
+            reason: One of :class:`~uvd_em_sdk.DisputeReason` (typed
                 ``dispute_reason`` enum — anything else is a 422
                 server-side, so it is validated locally first).
             description: 5-2000 chars explaining the dispute.

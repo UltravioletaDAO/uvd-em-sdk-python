@@ -37,7 +37,7 @@ def test_enums_match_backend():
     """Every synced enum must equal backend members + documented client
     extras, name for name and value for value. On failure:
     python scripts/sync_enums.py && ruff format ."""
-    import em_plugin_sdk.models as models
+    import uvd_em_sdk.models as models
 
     sync = _load_sync_module()
     backend_enums = sync.load_backend_enums(BACKEND)
@@ -79,7 +79,7 @@ def test_client_extras_still_absent_from_backend():
 def test_dispute_reason_not_generated():
     """DisputeReason mirrors migration 004, not models.py — it must stay
     hand-written (9 members) and never enter the generated region."""
-    from em_plugin_sdk.models import DisputeReason
+    from uvd_em_sdk.models import DisputeReason
 
     assert len(DisputeReason) == 9
     assert DisputeReason.OTHER.value == "other"

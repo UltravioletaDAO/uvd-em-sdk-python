@@ -6,7 +6,7 @@ import pytest
 import httpx
 import respx
 
-from em_plugin_sdk import EMClient, EMValidationError
+from uvd_em_sdk import EMClient, EMValidationError
 
 BASE = "https://api.execution.market/api/v1"
 

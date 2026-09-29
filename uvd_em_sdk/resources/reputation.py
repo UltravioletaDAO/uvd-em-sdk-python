@@ -93,7 +93,7 @@ class ReputationResource:
 
         The chain where this user's ERC-8004 reputation is written (ratee-
         driven, decoupled from the payment network). Default ``"base"``.
-        Inspect :pyattr:`~em_plugin_sdk.models.ReputationNetworkPreference.feature_enabled`
+        Inspect :pyattr:`~uvd_em_sdk.models.ReputationNetworkPreference.feature_enabled`
         before offering a selector: while ``False`` the preference is
         read-only ("coming soon") and :meth:`set_reputation_network` yields
         a 409.
@@ -113,7 +113,7 @@ class ReputationResource:
         (anti-laundering) — and show ``retrieved_at`` beside it so the reader
         can see how old the number is.
 
-        :pyattr:`~em_plugin_sdk.models.CrossChainReputation.final_score` is
+        :pyattr:`~uvd_em_sdk.models.CrossChainReputation.final_score` is
         ``None`` when there is no evidence. Branch on it; never read it as 0.
         """
         data = await self._client._request(

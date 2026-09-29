@@ -7,25 +7,30 @@ status: active
 aliases:
   - SDK Status
 related-files:
-  - em-plugin-sdk/em_plugin_sdk/client.py
-  - em-plugin-sdk/em_plugin_sdk/resources/
-  - em-plugin-sdk/em_plugin_sdk/erc8128.py
-  - em-plugin-sdk/em_plugin_sdk/escrow_signing.py
+  - uvd_em_sdk/client.py
+  - uvd_em_sdk/resources/
+  - uvd_em_sdk/erc8128.py
+  - uvd_em_sdk/escrow_signing.py
   - docs/planning/MASTER_PLAN_MOBILE_SDK_PARITY_SYNC_2026-07-03.md
 ---
 
-# em-plugin-sdk — Status Report (v0.5.0)
+# uvd-em-sdk — Status Report (v0.5.0)
+
+> **Historical snapshot.** Written for v0.5.0 while this package lived in the
+> Execution Market monorepo; when it moved to this repository only the package
+> name was updated. Paths outside `uvd_em_sdk/`, `tests/` and `scripts/` are
+> paths in that monorepo.
 
 > Python SDK for the Execution Market REST API.
 > Regenerated 2026-07-03 from the actual source tree after Master Plan Phases 6-8
 > (merge `344bad74`). **Every number below is counted from code, not from the plan.**
-> Package: `em-plugin-sdk/` (standalone, ready for its own repo).
+> Package: `uvd-em-sdk/` (standalone, ready for its own repo).
 
 ## Summary
 
 | Metric | Value | Counted from |
 |--------|-------|--------------|
-| Version | **0.5.0** | `em_plugin_sdk/__init__.py::__version__` (single source; `pyproject.toml` derives it at build via `[tool.hatch.version]`) |
+| Version | **0.5.0** | `uvd_em_sdk/__init__.py::__version__` (single source; `pyproject.toml` derives it at build via `[tool.hatch.version]`) |
 | Resource namespaces | **15** | `client.py` (`__init__`) |
 | API methods | **101** | sum over resources (below) |
 | Tests | **225 passing** | `pytest --collect-only` (0 failing) |
@@ -39,7 +44,7 @@ related-files:
 
 ## Version — single source of truth
 
-`__version__ = "0.5.0"` lives ONLY in `em_plugin_sdk/__init__.py` (SDK-51). `pyproject.toml`
+`__version__ = "0.5.0"` lives ONLY in `uvd_em_sdk/__init__.py` (SDK-51). `pyproject.toml`
 declares `dynamic = ["version"]` and `[tool.hatch.version]` reads it at build time; `client.py`
 derives the `User-Agent` from it at runtime. `tests/test_version.py` (3 tests) enforces that
 these agree — there is no second literal to drift.
@@ -154,7 +159,7 @@ The four **410 Gone** endpoints are `payment_extension`, `deposit`, `balance`, `
   enforced client-side: bounty ≤ $100 (deposit condition) and `maxFeeBps` ≥ 1300 (operator's
   static fee). Release/refund windows extend to `deadline + 7d + 7d` so a human publisher can
   still approve after the worker delivers near the deadline (avoids `AfterAuthorizationExpiry`).
-- Requires `pip install em-plugin-sdk[wallet]` (eth-account / eth-abi / eth-utils).
+- Requires `pip install uvd-em-sdk[wallet]` (eth-account / eth-abi / eth-utils).
 
 ---
 
@@ -200,7 +205,7 @@ The four **410 Gone** endpoints are `payment_extension`, `deposit`, `balance`, `
 | **Total** | **225** |
 
 CI runs these in the `sdk-tests` job of `.github/workflows/ci.yml` (path-filtered to
-`em-plugin-sdk/**`).
+`uvd-em-sdk/**`).
 
 ---
 
@@ -224,7 +229,7 @@ external write requiring explicit OK). README and docs instruct **install from s
 that OK lands:
 
 ```bash
-pip install -e path/to/em-plugin-sdk           # + [wallet] for escrow/ERC-8128 signing
+pip install -e path/to/uvd-em-sdk           # + [wallet] for escrow/ERC-8128 signing
 ```
 
 Dependencies: `httpx>=0.25.0`, `pydantic>=2.0`; optional `[realtime]` (`websockets`),
@@ -238,7 +243,7 @@ Dependencies: `httpx>=0.25.0`, `pydantic>=2.0`; optional `[realtime]` (`websocke
 
 ```python
 from uvd_x402_sdk.wallet import EnvKeyAdapter
-from em_plugin_sdk import EMClient
+from uvd_em_sdk import EMClient
 
 async with EMClient(wallet=EnvKeyAdapter()) as client:      # no api_key → signed writes
     await client.identity.register("my-agent")               # gasless ERC-8004
@@ -248,7 +253,7 @@ async with EMClient(wallet=EnvKeyAdapter()) as client:      # no api_key → sig
 ### Human publisher (Supabase JWT) — sign-on-assignment escrow
 
 ```python
-from em_plugin_sdk import EMClient, build_escrow_pre_auth
+from uvd_em_sdk import EMClient, build_escrow_pre_auth
 
 async with EMClient(supabase_jwt="eyJ...", wallet=publisher_wallet) as client:
     cfg = await client.h2a.payment_config()                  # GET /h2a/payment-config

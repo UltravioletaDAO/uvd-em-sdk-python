@@ -20,9 +20,9 @@ from eth_account import Account
 from eth_account.messages import encode_defunct
 from uvd_x402_sdk.wallet import EnvKeyAdapter
 
-import em_plugin_sdk.erc8128 as erc8128_mod
-from em_plugin_sdk import EMClient
-from em_plugin_sdk.erc8128 import sign_request
+import uvd_em_sdk.erc8128 as erc8128_mod
+from uvd_em_sdk import EMClient
+from uvd_em_sdk.erc8128 import sign_request
 
 BASE = "https://api.execution.market/api/v1"
 FIXED_NOW = 1760000000

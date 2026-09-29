@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from em_plugin_sdk.metered_channel import (
+from uvd_em_sdk.metered_channel import (
     COUNT_UNITS,
     UNIT_SECONDS,
     MeteredChannel,
@@ -106,7 +106,7 @@ def test_the_public_surface_names_no_particular_executor():
     only makes sense for something that flies is the wrong name here."""
     forbidden = re.compile(r"drone|dron\b|robot|flight|takeoff|aircraft", re.I)
 
-    src = Path(__file__).parent.parent / "em_plugin_sdk" / "metered_channel.py"
+    src = Path(__file__).parent.parent / "uvd_em_sdk" / "metered_channel.py"
     body = src.read_text(encoding="utf-8")
     hits = [ln for ln in body.splitlines() if forbidden.search(ln)]
     assert not hits, f"nombre de dron en el modulo generico: {hits[:5]}"

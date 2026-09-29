@@ -26,8 +26,8 @@ from pathlib import Path
 import pytest
 from eth_account import Account
 
-import em_plugin_sdk.escrow_signing as escrow_mod
-from em_plugin_sdk.escrow_signing import (
+import uvd_em_sdk.escrow_signing as escrow_mod
+from uvd_em_sdk.escrow_signing import (
     ESCROW_TIER_WINDOWS,
     REFUND_WINDOW_SEC,
     REVIEW_WINDOW_SEC,

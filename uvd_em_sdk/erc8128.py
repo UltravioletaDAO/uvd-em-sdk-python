@@ -19,7 +19,7 @@ Flow:
 Usage::
 
     from uvd_x402_sdk.wallet import EnvKeyAdapter
-    from em_plugin_sdk.erc8128 import fetch_nonce, sign_request
+    from uvd_em_sdk.erc8128 import fetch_nonce, sign_request
 
     wallet = EnvKeyAdapter()
     nonce = await fetch_nonce("https://api.execution.market")
@@ -33,7 +33,7 @@ Usage::
     # headers = {"Signature": "...", "Signature-Input": "...", "Content-Digest": "..."}
 
 The server nonce is single-use and expires after 5 minutes — fetch a fresh
-one per signed request (:class:`~em_plugin_sdk.client.EMClient` does this
+one per signed request (:class:`~uvd_em_sdk.client.EMClient` does this
 automatically, including on retries).
 
 Wire format: pinned by F3-1 (``shared/test-vectors/erc8128.json``) —

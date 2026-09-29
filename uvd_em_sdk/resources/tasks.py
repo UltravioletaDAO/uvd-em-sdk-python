@@ -153,7 +153,7 @@ class TasksResource:
             notes: Optional note for the worker.
             payment_auth: Fresh escrow authorization signed AT ASSIGNMENT,
                 sent as ``X-Payment-Auth`` (build it with
-                :func:`~em_plugin_sdk.escrow_signing.build_escrow_pre_auth`).
+                :func:`~uvd_em_sdk.escrow_signing.build_escrow_pre_auth`).
                 ADR-002 protocol constraint: the EIP-3009 nonce is
                 ``AuthCaptureEscrow.getHash(paymentInfo)`` which **includes
                 the receiver** — the escrow signature can only be created AT

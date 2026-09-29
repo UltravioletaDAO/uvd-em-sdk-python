@@ -7,7 +7,7 @@ import httpx
 import respx
 from pydantic import ValidationError
 
-from em_plugin_sdk import (
+from uvd_em_sdk import (
     EMClient,
     EMAuthError,
     EMNotFoundError,
@@ -61,7 +61,7 @@ class TestHeaders:
             return_value=httpx.Response(200, json={"status": "ok"})
         )
         await client.health()
-        assert "em-plugin-sdk" in route.calls.last.request.headers["user-agent"]
+        assert "uvd-em-sdk" in route.calls.last.request.headers["user-agent"]
 
     async def test_no_auth_header_when_no_key(self, mock_router):
         mock_router.get("/health").mock(
@@ -739,28 +739,28 @@ class TestLifecycle:
 
 class TestUnwrapEnvelope:
     def test_unwraps_success_envelope(self):
-        from em_plugin_sdk._envelope import unwrap_envelope
+        from uvd_em_sdk._envelope import unwrap_envelope
 
         payload = {"id": "app-1", "status": "pending"}
         enveloped = {"success": True, "message": "ok", "data": payload}
         assert unwrap_envelope(enveloped) == payload
 
     def test_leaves_direct_object_untouched(self):
-        from em_plugin_sdk._envelope import unwrap_envelope
+        from uvd_em_sdk._envelope import unwrap_envelope
 
         # A list response ({submissions, count}) has no boolean `success` key.
         direct = {"submissions": [], "count": 0}
         assert unwrap_envelope(direct) == direct
 
     def test_leaves_object_with_data_field_but_no_success(self):
-        from em_plugin_sdk._envelope import unwrap_envelope
+        from uvd_em_sdk._envelope import unwrap_envelope
 
         # A model that happens to carry a `data` field is not the envelope.
         obj = {"id": "x", "data": {"nested": 1}}
         assert unwrap_envelope(obj) == obj
 
     def test_leaves_success_envelope_with_non_dict_data(self):
-        from em_plugin_sdk._envelope import unwrap_envelope
+        from uvd_em_sdk._envelope import unwrap_envelope
 
         # Envelope whose `data` is None (no payload) is returned unchanged so a
         # downstream model_validate fails loudly rather than on None.

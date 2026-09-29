@@ -3,7 +3,7 @@
 Single source of truth: ``NETWORK_CONFIG``, whose literal lives in
 ``mcp_server/integrations/x402/network_registry.py`` (F6-4 moved the data out
 of ``sdk_client.py``, which re-exports it). This script rewrites the region of
-``em_plugin_sdk/networks.py`` from it, so the snapshot can never drift
+``uvd_em_sdk/networks.py`` from it, so the snapshot can never drift
 silently again (SDK-37) — the same pattern the CI uses for skill.md
 (``skill-sync-check``). ``tests/test_networks_sync.py`` enforces equality
 on every pytest run.
@@ -14,11 +14,11 @@ Semantics mirrored from the backend:
   - ``has_operator`` = an EM PaymentOperator is deployed (``operator`` key).
   - Full escrow lifecycle support = ``escrow AND operator``
     (``sdk_client.py::has_escrow_support``) — exposed in the SDK as
-    ``em_plugin_sdk.networks.has_escrow_support()``.
+    ``uvd_em_sdk.networks.has_escrow_support()``.
   - ``is_testnet``   = name carries a testnet suffix (the backend groups
     them under a ``# --- Testnets ---`` comment, without a flag).
 
-Usage (from ``em-plugin-sdk/``)::
+Usage (from the repository root)::
 
     python scripts/sync_networks.py            # rewrite the region
     python scripts/sync_networks.py --check    # exit 1 on drift (CI)
@@ -40,7 +40,7 @@ SDK_ROOT = SCRIPT_DIR.parent
 DEFAULT_BACKEND = (
     SDK_ROOT.parent / "mcp_server" / "integrations" / "x402" / "network_registry.py"
 )
-NETWORKS_PY = SDK_ROOT / "em_plugin_sdk" / "networks.py"
+NETWORKS_PY = SDK_ROOT / "uvd_em_sdk" / "networks.py"
 
 BEGIN_MARKER = "# --- BEGIN GENERATED: NETWORKS (scripts/sync_networks.py) ---"
 END_MARKER = "# --- END GENERATED: NETWORKS ---"
@@ -92,11 +92,11 @@ def build_registry(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def snapshot_registry() -> dict[str, dict[str, Any]]:
-    """Current ``em_plugin_sdk.networks.NETWORKS`` as plain data (same shape
+    """Current ``uvd_em_sdk.networks.NETWORKS`` as plain data (same shape
     as :func:`build_registry`) — used by ``--check`` and the equality test."""
     sys.path.insert(0, str(SDK_ROOT))
     try:
-        from em_plugin_sdk.networks import NETWORKS
+        from uvd_em_sdk.networks import NETWORKS
     finally:
         sys.path.pop(0)
     return {

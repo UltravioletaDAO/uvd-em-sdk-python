@@ -1,7 +1,7 @@
 """Tests for MockEMClient — verifies it mirrors the real client API."""
 
-from em_plugin_sdk.testing import MockEMClient
-from em_plugin_sdk import (
+from uvd_em_sdk.testing import MockEMClient
+from uvd_em_sdk import (
     CreateTaskParams,
     SubmitEvidenceParams,
     RejectParams,

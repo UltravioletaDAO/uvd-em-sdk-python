@@ -1,4 +1,4 @@
-"""Test helpers for em-plugin-sdk consumers."""
+"""Test helpers for uvd-em-sdk consumers."""
 
 from .mock_client import MockEMClient
 
