@@ -95,6 +95,9 @@ packages = ["uvd_em_sdk"]
 exclude = [
     "docs",
     ".gitignore",
+    # The repository's CI, not the package's: nothing in it builds or tests
+    # an installed sdist.
+    ".github",
 ]
 
 [tool.pytest.ini_options]
