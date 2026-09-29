@@ -1,0 +1,14 @@
+# Package-scoped on purpose. Keep it SMALL: hatchling publishes this file
+# inside every sdist, so anything written here is public and an sdist is not
+# replaceable once released. The full rationale was written in the Execution
+# Market monorepo, where this package used to live
+# (docs/architecture/em-plugin-sdk-packaging.md there).
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+.venv/

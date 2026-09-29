@@ -1,0 +1,109 @@
+[build-system]
+# Pinned for the same reason as `requirements-docgen.txt`: the backend decides
+# the METADATA of the artifact (today `Metadata-Version: 2.5`), and a release
+# build must not depend on whatever hatchling shipped that morning. There is no
+# lockfile behind this -- in a build-system table the pin IS the lock.
+# Moving it: rebuild, `twine check`, and diff the sdist file list first.
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "uvd-em-sdk"
+# Single source of truth: uvd_em_sdk/__init__.py::__version__
+# (hatch reads it at build time — see [tool.hatch.version]).
+dynamic = ["version"]
+description = "Python SDK for the Execution Market API — publish tasks, manage workers, handle payments"
+readme = "README.md"
+# SPDX expression + the file itself. `{ text = "MIT" }` put the word "MIT" in
+# the metadata and shipped NO license text: the sdist and the wheel carried
+# none, so what PyPI showed was a claim with nothing behind it. `license-files`
+# is what puts LICENSE into both artifacts.
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+    { name = "Ultravioleta DAO", email = "dev@ultravioletadao.xyz" },
+]
+keywords = ["execution-market", "ai-agents", "mcp", "x402", "erc8004"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    # Measured, not assumed: 387/387 on a clean 3.13 venv (2026-09-21). No
+    # 3.14 claim until the suite runs on it -- classifiers freeze into the
+    # metadata of a version that can never be republished.
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "httpx>=0.25.0",
+    "pydantic>=2.0",
+    # HARD dependency since 0.9.0 (it was the optional [wallet] extra): the
+    # escrow signature is uvd_x402_sdk.escrow_signing, re-exported by
+    # uvd_em_sdk.escrow_signing, and every production write is signed with
+    # its wallet adapters. [wallet] brings eth-account (eth-abi, eth-utils).
+    # The floor is the release whose escrow_signing API is stable; the
+    # ceiling keeps the next minor out until this suite has run against it
+    # -- this library signs money orders, so a foreign release must not
+    # arrive on its own. uvd_em_sdk/_deps.py re-checks the floor at import;
+    # tests/test_dependencies.py pins both ends here and there.
+    "uvd-x402-sdk[wallet]>=0.93.0,<0.94",
+]
+
+[project.optional-dependencies]
+realtime = [
+    "websockets>=12.0",
+]
+all = [
+    "websockets>=12.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "websockets>=12.0",
+    # Pinned like the backend job: an open range let 0.16.0 in (2026-07-23)
+    # and its formatter reflows code no one touched, so CI fails on unrelated
+    # PRs. Bumping the pin requires reformatting the package in the same PR.
+    "ruff==0.15.22",
+]
+
+[project.urls]
+Homepage = "https://execution.market"
+Documentation = "https://api.execution.market/docs"
+Repository = "https://github.com/UltravioletaDAO/uvd-em-sdk-python"
+Issues = "https://github.com/UltravioletaDAO/uvd-em-sdk-python/issues"
+
+[tool.hatch.version]
+path = "uvd_em_sdk/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["uvd_em_sdk"]
+
+# Everything the sdist carries is PUBLIC, and a released sdist cannot be
+# replaced. `docs/` here is repo-internal notes, not SDK documentation, so it
+# is excluded; `tests/`, `examples/` and `scripts/` stay because they are the
+# package's own and the parity tests call `scripts/sync_*.py`.
+# Rationale and the content audit were written while this package lived in
+# the Execution Market monorepo (docs/architecture/em-plugin-sdk-packaging.md
+# there).
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "docs",
+    ".gitignore",
+    # The repository's CI, not the package's: nothing in it builds or tests
+    # an installed sdist.
+    ".github",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
