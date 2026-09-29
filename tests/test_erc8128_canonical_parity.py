@@ -34,14 +34,8 @@ from uvd_x402_sdk.wallet import EnvKeyAdapter  # noqa: E402
 
 import uvd_em_sdk.erc8128 as plugin_mod  # noqa: E402
 
-_VECTORS_PATH = (
-    Path(__file__).resolve().parents[2] / "shared" / "test-vectors" / "erc8128.json"
-)
-
-pytestmark = pytest.mark.skipif(
-    not _VECTORS_PATH.exists(),
-    reason="shared/test-vectors/erc8128.json only exists in the monorepo checkout",
-)
+# Byte-identical copy of Execution Market's shared/test-vectors/erc8128.json.
+_VECTORS_PATH = Path(__file__).resolve().parent / "fixtures" / "erc8128.json"
 
 
 @pytest.fixture

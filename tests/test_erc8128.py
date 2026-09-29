@@ -137,13 +137,12 @@ class TestSignRequest:
 
 # ---------------------------------------------------------------------------
 # F3-1/F3-2 golden-vector conformance — byte-equality against the canonical
-# wire format pinned in shared/test-vectors/erc8128.json. This module is the
+# wire format pinned in tests/fixtures/erc8128.json (a byte-identical copy of
+# Execution Market's shared/test-vectors/erc8128.json). This module is the
 # INTERIM CANONICAL signer of the fleet: any drift here fails first.
 # ---------------------------------------------------------------------------
 
-_VECTORS_PATH = (
-    Path(__file__).resolve().parents[2] / "shared" / "test-vectors" / "erc8128.json"
-)
+_VECTORS_PATH = Path(__file__).resolve().parent / "fixtures" / "erc8128.json"
 
 
 @pytest.fixture
@@ -151,10 +150,6 @@ def golden_vectors():
     return json.loads(_VECTORS_PATH.read_text(encoding="utf-8"))
 
 
-@pytest.mark.skipif(
-    not _VECTORS_PATH.exists(),
-    reason="shared/test-vectors/erc8128.json only exists in the monorepo checkout",
-)
 class TestGoldenVectorConformance:
     @pytest.mark.parametrize("request_name", ["get_query", "post_body"])
     def test_headers_match_canonical_vector(

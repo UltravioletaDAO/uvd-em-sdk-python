@@ -1,10 +1,12 @@
 """build_escrow_pre_auth / compute_escrow_nonce — escrow sign-on-assignment.
 
 The nonce MUST match ``AuthCaptureEscrow.getHash(paymentInfo)`` or the
-on-chain authorize reverts. The golden vectors live in the SHARED fixture
-``shared/test-vectors/escrow-preauth.json`` — the single source consumed by
-this suite, the web mirror (``dashboard/src/test/services/h2aEscrowSigning
-.test.ts``) and the mobile mirror (``em-mobile/__tests__/h2aSigning.test.ts``).
+on-chain authorize reverts. The golden vectors are
+``tests/fixtures/escrow-preauth.json``, a byte-identical copy of Execution
+Market's SHARED fixture ``shared/test-vectors/escrow-preauth.json`` — the
+single source consumed there by the web mirror
+(``dashboard/src/test/services/h2aEscrowSigning.test.ts``) and the mobile
+mirror (``em-mobile/__tests__/h2aSigning.test.ts``).
 Originally derived with ``uvd_x402_sdk.advanced_escrow`` (the production
 reference) — the three implementations must agree byte-for-byte.
 
@@ -49,9 +51,7 @@ def _hydrate(value):
     return value
 
 
-_FIXTURE_PATH = (
-    Path(__file__).resolve().parents[2] / "shared" / "test-vectors"
-) / "escrow-preauth.json"
+_FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "escrow-preauth.json"
 FIXTURE = _hydrate(json.loads(_FIXTURE_PATH.read_text(encoding="utf-8")))
 FROZEN = FIXTURE["frozen_build"]
 
