@@ -4,7 +4,11 @@
 API** — publish tasks, manage workers, sign escrow authorizations, handle
 payments. Async, typed (Pydantic v2), resource-namespaced (Stripe pattern).
 Enums and the network registry are generated from the backend source of truth
-(`scripts/sync_enums.py`, `scripts/sync_networks.py`) with parity tests.
+(`scripts/sync_enums.py`, `scripts/sync_networks.py`) with parity tests that
+run in this repository's CI against a pinned copy of the backend data
+(`vendor/em/`, commit and sha256 in `vendor/em/SOURCE`). CI checks the copy
+against those hashes; that the copy is what that backend commit yields is
+checked with `python scripts/vendor_em.py --em-repo <clone> --check`.
 
 ## Replaces `em-plugin-sdk`
 
@@ -227,6 +231,7 @@ and passes `primaryType` to the wallet; the module docstring lists the details.
 Escrow-capable networks = escrow contract AND deployed operator
 (`uvd_em_sdk.networks.has_escrow_support`). The network registry is a
 generated snapshot of the backend `NETWORK_CONFIG` — resync with
+`python scripts/vendor_em.py --em-repo <Execution Market clone>`, then
 `python scripts/sync_networks.py && ruff format .`.
 
 ## Rater-signed reputation (EIP-7702)

@@ -1,0 +1,287 @@
+{
+  "base": {
+    "chain_id": 8453,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "name": "USD Coin",
+        "decimals": 6
+      },
+      "EURC": {
+        "address": "0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42",
+        "name": "EURC",
+        "decimals": 6
+      }
+    },
+    "escrow": true,
+    "operator": true
+  },
+  "ethereum": {
+    "chain_id": 1,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "name": "USD Coin",
+        "decimals": 6
+      },
+      "EURC": {
+        "address": "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
+        "name": "Euro Coin",
+        "decimals": 6
+      },
+      "PYUSD": {
+        "address": "0x6c3ea9036406852006290770BEdFcAbA0e23A0e8",
+        "name": "PayPal USD",
+        "decimals": 6
+      },
+      "AUSD": {
+        "address": "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a",
+        "name": "Agora Dollar",
+        "decimals": 6
+      }
+    },
+    "escrow": true,
+    "operator": true
+  },
+  "polygon": {
+    "chain_id": 137,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+        "name": "USD Coin",
+        "decimals": 6
+      },
+      "AUSD": {
+        "address": "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a",
+        "name": "Agora Dollar",
+        "decimals": 6
+      }
+    },
+    "escrow": true,
+    "operator": true
+  },
+  "arbitrum": {
+    "chain_id": 42161,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        "name": "USD Coin",
+        "decimals": 6
+      },
+      "USDT": {
+        "address": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+        "name": "USD\u20ae0",
+        "decimals": 6
+      },
+      "AUSD": {
+        "address": "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a",
+        "name": "Agora Dollar",
+        "decimals": 6
+      }
+    },
+    "escrow": true,
+    "operator": true
+  },
+  "celo": {
+    "chain_id": 42220,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0xcebA9300f2b948710d2653dD7B07f33A8B32118C",
+        "name": "USDC",
+        "decimals": 6
+      },
+      "USDT": {
+        "address": "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
+        "name": "Tether USD",
+        "decimals": 6
+      }
+    },
+    "escrow": true,
+    "operator": true
+  },
+  "monad": {
+    "chain_id": 143,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+        "name": "USDC",
+        "decimals": 6
+      },
+      "AUSD": {
+        "address": "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a",
+        "name": "Agora Dollar",
+        "decimals": 6
+      }
+    },
+    "escrow": true,
+    "operator": true
+  },
+  "avalanche": {
+    "chain_id": 43114,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+        "name": "USD Coin",
+        "decimals": 6
+      },
+      "EURC": {
+        "address": "0xC891EB4cbdEFf6e073e859e987815Ed1505c2ACD",
+        "name": "Euro Coin",
+        "decimals": 6
+      },
+      "AUSD": {
+        "address": "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a",
+        "name": "Agora Dollar",
+        "decimals": 6
+      }
+    },
+    "escrow": true,
+    "operator": true
+  },
+  "optimism": {
+    "chain_id": 10,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+        "name": "USD Coin",
+        "decimals": 6
+      },
+      "USDT": {
+        "address": "0x01bff41798a0bcf287b996046ca68b395dbc1071",
+        "name": "Tether USD",
+        "decimals": 6
+      }
+    },
+    "escrow": true,
+    "operator": true
+  },
+  "skale": {
+    "chain_id": 1187947933,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x85889c8c714505E0c94b30fcfcF64fE3Ac8FCb20",
+        "name": "Bridged USDC (SKALE Bridge)",
+        "decimals": 6
+      }
+    },
+    "escrow": true,
+    "operator": true
+  },
+  "solana": {
+    "chain_id": null,
+    "network_type": "svm",
+    "tokens": {
+      "USDC": {
+        "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "name": "USD Coin",
+        "decimals": 6
+      },
+      "AUSD": {
+        "address": "AUSD1jCcCyPLybk1YnvPWsHQSrZ46dxwoMniN4N2UEB9",
+        "name": "Agora Dollar",
+        "decimals": 6
+      }
+    }
+  },
+  "hyperevm": {
+    "chain_id": 999,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+        "name": "USDC",
+        "decimals": 6
+      }
+    }
+  },
+  "unichain": {
+    "chain_id": 130,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x078D782b760474a361dDA0AF3839290b0EF57AD6",
+        "name": "USD Coin",
+        "decimals": 6
+      }
+    }
+  },
+  "scroll": {
+    "chain_id": 534352,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4",
+        "name": "USD Coin",
+        "decimals": 6
+      }
+    }
+  },
+  "arc": {
+    "chain_id": 5042,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x3600000000000000000000000000000000000000",
+        "name": "USDC",
+        "decimals": 6
+      }
+    },
+    "escrow": true,
+    "operator": true
+  },
+  "base-sepolia": {
+    "chain_id": 84532,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        "name": "USD Coin",
+        "decimals": 6
+      }
+    },
+    "escrow": true
+  },
+  "ethereum-sepolia": {
+    "chain_id": 11155111,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+        "name": "USD Coin",
+        "decimals": 6
+      }
+    },
+    "escrow": true
+  },
+  "polygon-amoy": {
+    "chain_id": 80002,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582",
+        "name": "USD Coin",
+        "decimals": 6
+      }
+    }
+  },
+  "arbitrum-sepolia": {
+    "chain_id": 421614,
+    "network_type": "evm",
+    "tokens": {
+      "USDC": {
+        "address": "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+        "name": "USD Coin",
+        "decimals": 6
+      }
+    }
+  }
+}

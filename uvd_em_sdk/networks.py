@@ -6,10 +6,12 @@ making API calls.
 
 **Synced snapshot (SDK-37)**: the ``NETWORKS`` dict below is GENERATED from
 the backend single source of truth
-(``mcp_server/integrations/x402/sdk_client.py::NETWORK_CONFIG``) by
+(``mcp_server/integrations/x402/network_registry.py::NETWORK_CONFIG``,
+re-exported by ``sdk_client.py``), pinned in ``vendor/em/networks.json``, by
 ``scripts/sync_networks.py``; ``tests/test_networks_sync.py`` fails when it
 drifts. To resync::
 
+    python scripts/vendor_em.py --em-repo <Execution Market clone>
     python scripts/sync_networks.py && ruff format .
 
 Escrow semantics (mirrors backend ``has_escrow_support``): the FULL x402r
@@ -58,7 +60,7 @@ class NetworkInfo:
 
 
 # ---------------------------------------------------------------------------
-# Registry data (synced from mcp_server/integrations/x402/sdk_client.py)
+# Registry data (synced from vendor/em/networks.json)
 # Regenerate with: python scripts/sync_networks.py && ruff format .
 # ---------------------------------------------------------------------------
 

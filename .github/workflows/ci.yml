@@ -8,6 +8,8 @@ on:
       - "uvd_em_sdk/**"
       - "tests/**"
       - "scripts/**"
+      - "vendor/**" # the EM data tests/test_{networks,enums}_sync.py compare against
+      - ".gitattributes" # tests/test_vendor_em.py reads it
       - "examples/**"
       - "pyproject.toml"
       - "README.md" # tests/test_readme_quickstart.py runs its snippet

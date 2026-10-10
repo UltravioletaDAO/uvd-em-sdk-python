@@ -34,6 +34,10 @@ last version there was 0.8.0).
   `delegation_resolver` (EIP-7702); the eight positional parameters are
   unchanged. The clock and salt are read in `uvd_x402_sdk.escrow_signing`:
   tests that freeze them patch that module.
+- `scripts/sync_networks.py` and `scripts/sync_enums.py` read `vendor/em/`
+  instead of `../mcp_server/`. Their `--backend` option is removed, and
+  `sync_enums.py` no longer writes the monorepo's `sdk/python` (absent here:
+  the script would crash on it).
 
 ### Added
 
@@ -41,3 +45,11 @@ last version there was 0.8.0).
   `shared/test-vectors/escrow-preauth.json` and `erc8128.json`, so the whole
   suite runs outside the monorepo.
 - `tests/test_escrow_signing_reexport.py` and `tests/test_dependencies.py`.
+- `vendor/em/`: the Execution Market data the parity tests compare the SDK
+  against — the `NETWORK_CONFIG` fields `networks.py` mirrors and the four
+  synced enums, not the backend modules — written by `scripts/vendor_em.py`
+  from a pinned EM commit. `vendor/em/SOURCE` records the commit and the
+  sha256 of each upstream module and each vendored file;
+  `tests/test_vendor_em.py` checks them. `tests/test_networks_sync.py` and
+  `tests/test_enums_sync.py` used to skip outside the monorepo and now always
+  run.

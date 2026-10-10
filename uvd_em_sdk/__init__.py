@@ -4,8 +4,9 @@ Formerly ``em-plugin-sdk``, distributed from the Execution Market monorepo and
 never released on PyPI (0.8.0 was its last version there); 0.9.0, the first
 PyPI release, is the same API under this name. Enums are
 generated from the backend (``mcp_server/models.py`` of Execution Market) by
-``scripts/sync_enums.py``; ``tests/test_enums_sync.py`` enforces parity where
-that backend source is present (skipped otherwise).
+``scripts/sync_enums.py``; ``tests/test_enums_sync.py`` enforces parity
+against the copy pinned in ``vendor/em/`` (commit and sha256 in
+``vendor/em/SOURCE``).
 """
 
 # First on purpose: importing _deps refuses an uvd-x402-sdk older than 0.93.0,

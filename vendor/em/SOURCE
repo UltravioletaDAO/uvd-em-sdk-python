@@ -1,0 +1,12 @@
+# Derived from Execution Market (private) at `commit`: NOT a copy of the two
+# modules, only the fields the parity tests read (scripts/vendor_em.py says which).
+# tests/test_vendor_em.py checks each vendored sha256; `<file> from` is the sha256
+# of the upstream module at `commit` (python scripts/vendor_em.py --check).
+# To update: python scripts/vendor_em.py --em-repo <EM clone> [--commit <sha>],
+# then python scripts/sync_networks.py && python scripts/sync_enums.py && ruff format .
+repo: UltravioletaDAO/execution-market
+commit: f75d4171cd043d2ef2b40299d9a254c4deacb032
+networks.json: sha256=72f11afafe397126049b0a513dd2c4323d69baae40dfb9360352e0151c7198b8
+networks.json from: mcp_server/integrations/x402/network_registry.py sha256=f11f8802b84bc733899524b771b5e5ab909590cba694aee14ed493e1aca46d96
+enums.json: sha256=2f9900c9bb7bdc3ce5d724b141702bdc2d5d7e1758611ac9346e469f3fa6f56c
+enums.json from: mcp_server/models.py sha256=3b23716ec3efc4b98d5c2463690b862e0da8d383b921eb0244577504a5fb48dc

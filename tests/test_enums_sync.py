@@ -1,25 +1,18 @@
 """Parity test: client enums vs backend ``mcp_server/models.py`` (F3-6).
 
-Same pattern as ``test_networks_sync.py``: runs wherever the repo checkout
-includes ``mcp_server/`` (CI does); skipped for a standalone SDK install.
-The backend module is parsed with ``ast`` — never imported (it pulls
-env-dependent imports at import time).
+Same pattern as ``test_networks_sync.py``: the backend module lives in
+Execution Market (private); this repository compares against its members,
+vendored at a pinned commit in ``vendor/em/enums.json``
+(``vendor/em/SOURCE``; ``tests/test_vendor_em.py`` checks the hashes). No
+skip: it runs in a standalone checkout, CI included.
 """
 
 import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
-
 SDK_ROOT = Path(__file__).resolve().parents[1]
-BACKEND = SDK_ROOT.parent / "mcp_server" / "models.py"
 SYNC_SCRIPT = SDK_ROOT / "scripts" / "sync_enums.py"
-
-requires_backend = pytest.mark.skipif(
-    not BACKEND.exists(),
-    reason="mcp_server/ not present (standalone SDK install)",
-)
 
 
 def _load_sync_module():
@@ -32,7 +25,6 @@ def _load_sync_module():
     return module
 
 
-@requires_backend
 def test_enums_match_backend():
     """Every synced enum must equal backend members + documented client
     extras, name for name and value for value. On failure:
@@ -40,33 +32,31 @@ def test_enums_match_backend():
     import uvd_em_sdk.models as models
 
     sync = _load_sync_module()
-    backend_enums = sync.load_backend_enums(BACKEND)
+    backend_enums = sync.load_backend_enums()
     for enum_name in sync.TARGETS["plugin"].enums:
         expected = sync.expected_members(backend_enums, enum_name)
         actual = {member.name: member.value for member in getattr(models, enum_name)}
         assert actual == expected, (
-            f"{enum_name} drifted from mcp_server/models.py — regenerate "
+            f"{enum_name} drifted from vendor/em/enums.json — regenerate "
             "with: python scripts/sync_enums.py && ruff format ."
         )
 
 
-@requires_backend
 def test_generated_region_matches_renderer():
     """The region TEXT must be exactly what the script renders (guards
     hand-edits inside the markers, not just semantic drift)."""
     sync = _load_sync_module()
-    backend_enums = sync.load_backend_enums(BACKEND)
+    backend_enums = sync.load_backend_enums()
     target = sync.TARGETS["plugin"]
     assert sync.read_region(target.path) == sync.render_region(backend_enums, target)
 
 
-@requires_backend
 def test_client_extras_still_absent_from_backend():
     """The day the backend enum gains an extra's value (e.g. TaskStatus
     'assigning'), the CLIENT_EXTRAS entry must be retired — the script
     itself refuses to run, and this test names the cleanup."""
     sync = _load_sync_module()
-    backend_enums = sync.load_backend_enums(BACKEND)
+    backend_enums = sync.load_backend_enums()
     for enum_name, extras in sync.CLIENT_EXTRAS.items():
         backend_values = set(backend_enums[enum_name].values())
         for extra in extras:
