@@ -1,6 +1,26 @@
 # Changelog
 
-## [0.9.0] — unreleased
+## [Unreleased]
+
+### Changed
+
+- `scripts/sync_networks.py` and `scripts/sync_enums.py` read `vendor/em/`
+  instead of `../mcp_server/`. Their `--backend` option is removed, and
+  `sync_enums.py` no longer writes the monorepo's `sdk/python` (absent here:
+  the script would crash on it).
+
+### Added
+
+- `vendor/em/`: the Execution Market data the parity tests compare the SDK
+  against — the `NETWORK_CONFIG` fields `networks.py` mirrors and the four
+  synced enums, not the backend modules — written by `scripts/vendor_em.py`
+  from a pinned EM commit. `vendor/em/SOURCE` records the commit and the
+  sha256 of each upstream module and each vendored file;
+  `tests/test_vendor_em.py` checks them. `tests/test_networks_sync.py` and
+  `tests/test_enums_sync.py` used to skip outside the monorepo and now always
+  run.
+
+## [0.9.0] — 2026-09-29
 
 First PyPI release. `uvd-em-sdk` replaces `em-plugin-sdk`, formerly
 distributed from the Execution Market monorepo (never released on PyPI; its

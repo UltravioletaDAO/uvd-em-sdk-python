@@ -11,9 +11,11 @@ from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
 # Enums — GENERATED from the backend single source of truth
-# (``mcp_server/models.py``) by ``scripts/sync_enums.py`` (F3-6);
-# ``tests/test_enums_sync.py`` fails when they drift. To resync::
+# (``mcp_server/models.py``, pinned in ``vendor/em/enums.json``) by
+# ``scripts/sync_enums.py`` (F3-6); ``tests/test_enums_sync.py`` fails when
+# they drift. To resync::
 #
+#     python scripts/vendor_em.py --em-repo <Execution Market clone>
 #     python scripts/sync_enums.py && ruff format .
 #
 # ``DisputeReason`` below is hand-written (migration 004, not in models.py).

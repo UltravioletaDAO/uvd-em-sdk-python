@@ -1,0 +1,62 @@
+{
+  "TaskStatus": {
+    "PUBLISHED": "published",
+    "ACCEPTED": "accepted",
+    "IN_PROGRESS": "in_progress",
+    "SUBMITTED": "submitted",
+    "VERIFYING": "verifying",
+    "COMPLETED": "completed",
+    "DISPUTED": "disputed",
+    "EXPIRED": "expired",
+    "CANCELLED": "cancelled"
+  },
+  "TaskCategory": {
+    "PHYSICAL_PRESENCE": "physical_presence",
+    "KNOWLEDGE_ACCESS": "knowledge_access",
+    "HUMAN_AUTHORITY": "human_authority",
+    "SIMPLE_ACTION": "simple_action",
+    "DIGITAL_PHYSICAL": "digital_physical",
+    "LOCATION_BASED": "location_based",
+    "VERIFICATION": "verification",
+    "SOCIAL_PROOF": "social_proof",
+    "DATA_COLLECTION": "data_collection",
+    "SENSORY": "sensory",
+    "SOCIAL": "social",
+    "PROXY": "proxy",
+    "BUREAUCRATIC": "bureaucratic",
+    "EMERGENCY": "emergency",
+    "CREATIVE": "creative",
+    "DATA_PROCESSING": "data_processing",
+    "API_INTEGRATION": "api_integration",
+    "CONTENT_GENERATION": "content_generation",
+    "CODE_EXECUTION": "code_execution",
+    "RESEARCH": "research",
+    "MULTI_STEP_WORKFLOW": "multi_step_workflow"
+  },
+  "EvidenceType": {
+    "PHOTO": "photo",
+    "PHOTO_GEO": "photo_geo",
+    "VIDEO": "video",
+    "DOCUMENT": "document",
+    "RECEIPT": "receipt",
+    "SIGNATURE": "signature",
+    "NOTARIZED": "notarized",
+    "TIMESTAMP_PROOF": "timestamp_proof",
+    "TEXT_RESPONSE": "text_response",
+    "MEASUREMENT": "measurement",
+    "SCREENSHOT": "screenshot",
+    "JSON_RESPONSE": "json_response",
+    "API_RESPONSE": "api_response",
+    "CODE_OUTPUT": "code_output",
+    "FILE_ARTIFACT": "file_artifact",
+    "URL_REFERENCE": "url_reference",
+    "STRUCTURED_DATA": "structured_data",
+    "TEXT_REPORT": "text_report"
+  },
+  "TargetExecutorType": {
+    "HUMAN": "human",
+    "AGENT": "agent",
+    "ROBOT": "robot",
+    "ANY": "any"
+  }
+}

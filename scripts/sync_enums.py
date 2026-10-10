@@ -1,18 +1,17 @@
 """Regenerate the client enum snapshots from the backend models.
 
-Single source of truth: ``mcp_server/models.py`` (``TaskStatus``,
-``TaskCategory``, ``EvidenceType``, ``TargetExecutorType``). This script
-rewrites the generated region of each client SDK from it, so the snapshots
-can never drift silently again (F3-6) — the same pattern as
-``scripts/sync_networks.py`` for the network registry. ``sdk/python``
-shipped a 5-member ``TaskCategory`` against a 21-category backend and
-crashed with ``ValueError`` on 16 of them; this is the fix that keeps it
-fixed. Per-SDK parity tests (``tests/test_enums_sync.py`` in each SDK)
-enforce equality on every pytest run.
-
-Targets:
-  - ``uvd_em_sdk/models.py``            (canonical client stack)
-  - ``sdk/python/execution_market/types.py`` (OWS signer + legacy shim)
+Single source of truth: Execution Market's ``mcp_server/models.py``
+(``TaskStatus``, ``TaskCategory``, ``EvidenceType``, ``TargetExecutorType``).
+EM is private, so this repository carries those members, vendored at a pinned
+commit in ``vendor/em/enums.json`` by ``scripts/vendor_em.py``
+(``vendor/em/SOURCE``). This script rewrites the generated region of
+``uvd_em_sdk/models.py`` from that copy, so the snapshot can never drift
+silently again (F3-6) — the same pattern as ``scripts/sync_networks.py`` for
+the network registry. The monorepo's ``sdk/python`` shipped a 5-member
+``TaskCategory`` against a 21-category backend and crashed with
+``ValueError`` on 16 of them; this is the fix that keeps it fixed.
+``tests/test_enums_sync.py`` enforces equality on every pytest run, CI
+included.
 
 Client extras: values the backend API emits but its enum predates
 (``TaskStatus.ASSIGNING``, ADR-003 async assign) are declared ONCE in
@@ -24,9 +23,8 @@ extra is retired.
 
 Usage (from the repository root)::
 
-    python scripts/sync_enums.py            # rewrite both regions
-    python scripts/sync_enums.py --check    # exit 1 on drift (CI)
-    python scripts/sync_enums.py --backend path/to/models.py
+    python scripts/sync_enums.py            # rewrite the region
+    python scripts/sync_enums.py --check    # exit 1 on drift
 
 Run ``ruff format .`` after a rewrite (house rule).
 """
@@ -34,15 +32,14 @@ Run ``ruff format .`` after a rewrite (house rule).
 from __future__ import annotations
 
 import argparse
-import ast
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SDK_ROOT = SCRIPT_DIR.parent
-REPO_ROOT = SDK_ROOT.parent
-DEFAULT_BACKEND = REPO_ROOT / "mcp_server" / "models.py"
+VENDORED = SDK_ROOT / "vendor" / "em" / "enums.json"
 
 BEGIN_MARKER = "# --- BEGIN GENERATED: ENUMS (uvd-em-sdk/scripts/sync_enums.py) ---"
 END_MARKER = "# --- END GENERATED: ENUMS ---"
@@ -69,10 +66,6 @@ TARGETS: dict[str, Target] = {
     "plugin": Target(
         path=SDK_ROOT / "uvd_em_sdk" / "models.py",
         enums=("TaskStatus", "TaskCategory", "EvidenceType", "TargetExecutorType"),
-    ),
-    "sdk-python": Target(
-        path=REPO_ROOT / "sdk" / "python" / "execution_market" / "types.py",
-        enums=("TaskStatus", "TaskCategory", "EvidenceType"),
     ),
 }
 
@@ -103,29 +96,10 @@ ENUM_DOCS: dict[str, str] = {
 }
 
 
-def load_backend_enums(backend_path: Path) -> dict[str, dict[str, str]]:
-    """Parse every ``class X(str, Enum)`` out of the backend module WITHOUT
-    importing it (the backend package pulls env-dependent imports)."""
-    tree = ast.parse(backend_path.read_text(encoding="utf-8"))
-    enums: dict[str, dict[str, str]] = {}
-    for node in tree.body:
-        if not isinstance(node, ast.ClassDef):
-            continue
-        bases = {b.id for b in node.bases if isinstance(b, ast.Name)}
-        if "Enum" not in bases:
-            continue
-        members: dict[str, str] = {}
-        for stmt in node.body:
-            if (
-                isinstance(stmt, ast.Assign)
-                and len(stmt.targets) == 1
-                and isinstance(stmt.targets[0], ast.Name)
-                and isinstance(stmt.value, ast.Constant)
-                and isinstance(stmt.value.value, str)
-            ):
-                members[stmt.targets[0].id] = stmt.value.value
-        enums[node.name] = members
-    return enums
+def load_backend_enums(path: Path = VENDORED) -> dict[str, dict[str, str]]:
+    """The vendored backend enums, name -> {member: value} in backend order
+    (``scripts/vendor_em.py`` writes them)."""
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def expected_members(
@@ -189,18 +163,14 @@ def rewrite_region(path: Path, content: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", type=Path, default=DEFAULT_BACKEND)
     parser.add_argument(
         "--check",
         action="store_true",
-        help="compare every target against the backend; exit 1 on drift",
+        help="compare every target against vendor/em/; exit 1 on drift",
     )
     args = parser.parse_args()
 
-    if not args.backend.exists():
-        raise SystemExit(f"Backend models not found: {args.backend}")
-
-    backend_enums = load_backend_enums(args.backend)
+    backend_enums = load_backend_enums()
     # Validate extras (and fail loudly) before touching any file.
     for target in TARGETS.values():
         for enum_name in target.enums:
@@ -218,12 +188,12 @@ def main() -> int:
 
     if args.check:
         if drifted:
-            print("DRIFT — client enums do not match mcp_server/models.py:")
+            print("DRIFT — client enums do not match vendor/em/enums.json:")
             for entry in drifted:
                 print(f"  {entry}")
             print("Fix: python scripts/sync_enums.py && ruff format .")
             return 1
-        print(f"OK — {len(TARGETS)} targets match mcp_server/models.py")
+        print(f"OK — {len(TARGETS)} target(s) match vendor/em/enums.json")
         return 0
 
     print("Now run: ruff format .")

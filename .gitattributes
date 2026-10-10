@@ -1,0 +1,4 @@
+# vendor/em/SOURCE hashes the BYTES: no end-of-line conversion on checkout
+# (core.autocrlf on Windows would break every sha256). tests/test_vendor_em.py
+# checks this rule is here.
+vendor/em/** -text

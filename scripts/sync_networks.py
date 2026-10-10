@@ -1,12 +1,14 @@
 """Regenerate the SDK network snapshot from the backend registry.
 
-Single source of truth: ``NETWORK_CONFIG``, whose literal lives in
-``mcp_server/integrations/x402/network_registry.py`` (F6-4 moved the data out
-of ``sdk_client.py``, which re-exports it). This script rewrites the region of
-``uvd_em_sdk/networks.py`` from it, so the snapshot can never drift
-silently again (SDK-37) — the same pattern the CI uses for skill.md
-(``skill-sync-check``). ``tests/test_networks_sync.py`` enforces equality
-on every pytest run.
+Single source of truth: ``NETWORK_CONFIG``, whose literal lives in Execution
+Market's ``mcp_server/integrations/x402/network_registry.py`` (F6-4 moved the
+data out of ``sdk_client.py``, which re-exports it). EM is private, so this
+repository carries the fields the SDK reads, vendored at a pinned commit in
+``vendor/em/networks.json`` by ``scripts/vendor_em.py`` (``vendor/em/SOURCE``).
+This script rewrites the region of ``uvd_em_sdk/networks.py`` from that copy,
+so the snapshot can never drift silently again (SDK-37).
+``tests/test_networks_sync.py`` enforces equality on every pytest run, CI
+included.
 
 Semantics mirrored from the backend:
   - ``has_escrow``   = the network has the AuthCaptureEscrow singleton
@@ -21,8 +23,7 @@ Semantics mirrored from the backend:
 Usage (from the repository root)::
 
     python scripts/sync_networks.py            # rewrite the region
-    python scripts/sync_networks.py --check    # exit 1 on drift (CI)
-    python scripts/sync_networks.py --backend path/to/network_registry.py
+    python scripts/sync_networks.py --check    # exit 1 on drift
 
 Run ``ruff format .`` after a rewrite (house rule).
 """
@@ -30,16 +31,14 @@ Run ``ruff format .`` after a rewrite (house rule).
 from __future__ import annotations
 
 import argparse
-import ast
+import json
 import sys
 from pathlib import Path
 from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SDK_ROOT = SCRIPT_DIR.parent
-DEFAULT_BACKEND = (
-    SDK_ROOT.parent / "mcp_server" / "integrations" / "x402" / "network_registry.py"
-)
+VENDORED = SDK_ROOT / "vendor" / "em" / "networks.json"
 NETWORKS_PY = SDK_ROOT / "uvd_em_sdk" / "networks.py"
 
 BEGIN_MARKER = "# --- BEGIN GENERATED: NETWORKS (scripts/sync_networks.py) ---"
@@ -48,20 +47,10 @@ END_MARKER = "# --- END GENERATED: NETWORKS ---"
 TESTNET_SUFFIXES = ("-sepolia", "-amoy", "-testnet", "-devnet")
 
 
-def load_network_config(backend_path: Path) -> dict[str, Any]:
-    """Parse ``NETWORK_CONFIG`` out of the backend module WITHOUT importing
-    it (importing pulls the x402 package, which reads env vars at import
-    time)."""
-    tree = ast.parse(backend_path.read_text(encoding="utf-8"))
-    for node in tree.body:
-        target = None
-        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            target = node.target.id
-        elif isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
-            target = node.targets[0].id
-        if target == "NETWORK_CONFIG" and node.value is not None:
-            return ast.literal_eval(node.value)
-    raise SystemExit(f"NETWORK_CONFIG not found in {backend_path}")
+def load_network_config(path: Path = VENDORED) -> dict[str, Any]:
+    """The vendored projection of ``NETWORK_CONFIG`` (same keys, escrow and
+    operator reduced to booleans; ``scripts/vendor_em.py`` writes it)."""
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def is_testnet(name: str) -> bool:
@@ -164,18 +153,14 @@ def rewrite_networks_py(registry: dict[str, dict[str, Any]]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", type=Path, default=DEFAULT_BACKEND)
     parser.add_argument(
         "--check",
         action="store_true",
-        help="compare the snapshot against the backend; exit 1 on drift",
+        help="compare the snapshot against vendor/em/; exit 1 on drift",
     )
     args = parser.parse_args()
 
-    if not args.backend.exists():
-        raise SystemExit(f"Backend registry not found: {args.backend}")
-
-    expected = build_registry(load_network_config(args.backend))
+    expected = build_registry(load_network_config())
 
     if args.check:
         actual = snapshot_registry()

@@ -86,8 +86,9 @@ packages = ["uvd_em_sdk"]
 
 # Everything the sdist carries is PUBLIC, and a released sdist cannot be
 # replaced. `docs/` here is repo-internal notes, not SDK documentation, so it
-# is excluded; `tests/`, `examples/` and `scripts/` stay because they are the
-# package's own and the parity tests call `scripts/sync_*.py`.
+# is excluded; `tests/`, `examples/`, `scripts/` and `vendor/` stay because
+# they are the package's own and the parity tests call `scripts/sync_*.py`
+# against `vendor/em/` (fields of public data only: scripts/vendor_em.py).
 # Rationale and the content audit were written while this package lived in
 # the Execution Market monorepo (docs/architecture/em-plugin-sdk-packaging.md
 # there).
