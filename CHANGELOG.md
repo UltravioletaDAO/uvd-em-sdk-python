@@ -1,9 +1,6 @@
 # Changelog
 
-## [Unreleased]
-
-`__version__` is 0.9.1: what a git install of this tree reports, so it is not
-taken for the 0.9.0 on PyPI. Not released.
+## [0.9.1] — 2026-10-11
 
 ### Fixed
 
