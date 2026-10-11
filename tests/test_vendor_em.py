@@ -519,6 +519,25 @@ def test_check_names_a_vendored_file_that_is_gone_on_both_lines(em_clone, sdk_tr
     assert "a re-vendor would change ['enums.json']" in result.stdout
 
 
+def test_check_against_a_ref_behind_source_is_not_drift(em_clone, sdk_tree, tmp_path):
+    """A clone that was not fetched answers with an OLDER commit than the
+    pin. That is no answer, and certainly not "re-vendor the older one"."""
+    repo, older = em_clone
+    registry = repo / REGISTRY
+    registry.write_bytes(registry.read_bytes().replace(b'"0xA"', b'"0xA2"'))
+    newer = _commit(repo, tmp_path, "EM moves on")
+    for name, data in vendor.build(repo, newer).items():  # SOURCE pins `newer`
+        (sdk_tree / "vendor" / "em" / name).write_bytes(data)
+    _fetched(repo, older)  # origin/main never fetched past `older`
+
+    result = _check(sdk_tree, repo)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f"STALE — origin/main = {older[:12]}" in result.stdout
+    assert "--commit" not in result.stdout
+    assert "UPSTREAM DRIFT" not in result.stdout
+
+
 def test_check_without_the_upstream_ref_is_not_green(em_clone, sdk_tree):
     """A clone that was never fetched has no origin/main: that is no answer,
     so it must not read as one."""
@@ -596,8 +615,16 @@ def test_the_job_fetches_then_checks_upstream_and_stops_if_the_fetch_fails():
     )
     shell, flag, command = job["ProgramArguments"]
     assert (shell, flag) == ("/bin/sh", "-c")
-    fetch, check = command.split(" && ")
-    assert fetch == 'git -C "/em" fetch --quiet origin main'
+    clean, pull, fetch, check = command.split(" && ")
+    # This checkout first: on main, without local edits (a stale checkout
+    # reports drift main already fixed; an edited one checks the edits).
+    assert clean == 'git -C "/sdk" diff --quiet HEAD --'
+    assert pull == 'git -C "/sdk" pull --ff-only --quiet origin main'
+    # The refspec is explicit: a clone configured without main still updates
+    # origin/main, the ref the check compares.
+    assert fetch == (
+        'git -C "/em" fetch --quiet origin +refs/heads/main:refs/remotes/origin/main'
+    )
     assert check == (
         'exec "/py" scripts/vendor_em.py --em-repo "/em" --check --upstream origin/main'
     )
@@ -617,7 +644,7 @@ def test_the_job_runs_the_script_it_names(tmp_path):
         EVERY="60",
         LOG=str(tmp_path / "log"),
     )
-    argv = shlex.split(job["ProgramArguments"][2].split(" && ")[1])[1:]
+    argv = shlex.split(job["ProgramArguments"][2].split(" && ")[-1])[1:]
     result = subprocess.run(
         argv, cwd=job["WorkingDirectory"], capture_output=True, text=True
     )

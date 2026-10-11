@@ -27,7 +27,9 @@ either is no:
      clone first) yield the same vendored bytes? A newer commit is not drift
      by itself — most EM commits change nothing the SDK mirrors — so this
      compares the bytes ``vendor/em/`` would get, not the commit or the
-     upstream module's sha256.
+     upstream module's sha256. A ref that does not contain SOURCE's commit
+     (a clone that was not fetched) is no answer: it says so and exits 1,
+     instead of proposing to vendor an older commit.
 
 It prints file names and commits, never EM data: EM is private, and the
 output of a scheduled run ends up in a log. ``scripts/upstream-check.plist.template``
@@ -256,6 +258,29 @@ def check_upstream(
     ]
 
 
+def contains(em_repo: Path, ancestor: str, commit: str) -> bool:
+    """Whether ``commit`` has ``ancestor`` in its history."""
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(em_repo),
+                "merge-base",
+                "--is-ancestor",
+                ancestor,
+                commit,
+            ],
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        raise SystemExit("git not found on PATH: the EM clone is read with git")
+    if proc.returncode not in (0, 1):
+        stderr = proc.stderr.decode("utf-8", "replace").strip()
+        raise SystemExit(f"git merge-base --is-ancestor failed in {em_repo}: {stderr}")
+    return proc.returncode == 0
+
+
 def committed_at(em_repo: Path, commit: str) -> str:
     """The commit date, so a log shows how fresh the compared ref was."""
     return _git(em_repo, "log", "-1", "--format=%cI", commit).decode().strip()
@@ -303,8 +328,15 @@ def main() -> int:
             )
 
         ref = args.upstream or DEFAULT_UPSTREAM
-        head, ahead = check_upstream(args.em_repo, ref)
+        head = resolve_commit(args.em_repo, ref)
         seen = f"{ref} = {head[:12]}, committed {committed_at(args.em_repo, head)}"
+        if not contains(args.em_repo, pinned["commit"], head):
+            print(
+                f"STALE — {seen} does not contain SOURCE's commit "
+                f"({pinned['commit'][:12]}): fetch the EM clone and run again"
+            )
+            return 1
+        _, ahead = check_upstream(args.em_repo, head)
         if ahead:
             print(f"UPSTREAM DRIFT — {seen}: a re-vendor would change {ahead}")
             print(

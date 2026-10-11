@@ -24,7 +24,9 @@ taken for the 0.9.0 on PyPI. Not released.
   newer `--upstream` ref (default `origin/main`) yields, and exits 1 when a
   re-vendor would change it. It checked only SOURCE's own commit, so it stayed
   green however far EM moved. A newer commit that yields the same vendored
-  bytes is green. The output names files and commits, never EM data.
+  bytes is green; a ref that does not contain SOURCE's commit (a clone that
+  was not fetched) is reported `STALE` and exits 1 instead of proposing an
+  older commit. The output names files and commits, never EM data.
 
 - `scripts/sync_networks.py` and `scripts/sync_enums.py` read `vendor/em/`
   instead of `../mcp_server/`. Their `--backend` option is removed, and
@@ -34,8 +36,9 @@ taken for the 0.9.0 on PyPI. Not released.
 ### Added
 
 - `scripts/upstream-check.plist.template`: the periodic `--check` as a macOS
-  LaunchAgent (fetch the authorised EM clone, then check). Not installed, no
-  secret: it uses the clone's own git credentials.
+  LaunchAgent (bring this checkout to main, refusing local edits; fetch the
+  authorised EM clone's main; then check). Not installed, no secret: it uses
+  the clones' own git credentials.
 - `vendor/em/`: the Execution Market data the parity tests compare the SDK
   against — the `NETWORK_CONFIG` fields `networks.py` mirrors and the four
   synced enums, not the backend modules — written by `scripts/vendor_em.py`
