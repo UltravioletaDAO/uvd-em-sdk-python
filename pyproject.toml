@@ -56,7 +56,13 @@ dependencies = [
     # escrow_signing, wallet and erc8128 byte-identical and
     # erc8004.supports_relayed_feedback identical by AST; the suite passes on
     # both (CHANGELOG 0.9.1).
-    "uvd-x402-sdk[wallet]>=0.93.0,<0.95",
+    # Ceiling <0.95 -> <0.98 (0.9.2): Execution Market moves to 0.97.0. From
+    # 0.94.0 to 0.97.0, wallet, erc8128 and erc8004 are byte-identical; the
+    # escrow_signing this package re-exports refuses more before signing (a
+    # config the SDK's escrow tables contradict, a chain without rows, windows
+    # above their ceilings) and signs the same bytes otherwise. The suite passes
+    # on 0.95.0, 0.96.0 and 0.97.0 (CHANGELOG 0.9.2).
+    "uvd-x402-sdk[wallet]>=0.93.0,<0.98",
 ]
 
 [project.optional-dependencies]

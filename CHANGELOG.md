@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.9.2] — unreleased
+
+### Changed
+
+- `uvd-x402-sdk[wallet]>=0.93.0,<0.98` (was `<0.95`): Execution Market moves
+  to 0.97.0 and consumes this package in the same environment. From 0.94.0 to
+  0.97.0, `wallet`, `erc8128` and `erc8004` are byte-identical in the
+  published wheels. The `escrow_signing` this package re-exports signs the same
+  bytes for a config its tables agree with, and refuses more before signing:
+  from 0.96.0 a config whose escrow, token collector, USDC, operator or fee
+  ceiling contradicts the SDK's escrow tables, and from 0.97.0 a chain without
+  a row in every table, an unregistered network name, and tier windows or an
+  `authorizationExpiry` above their ceilings. The suite passes on 0.95.0,
+  0.96.0 and 0.97.0.
+
+### Tests
+
+- `test_5_an_unverified_chain_is_signed_with_a_warning` checks the refusal
+  (`ValueError`, nothing signed) when the installed SDK is 0.96.0 or later,
+  and the warning below it.
+
 ## [0.9.1] — 2026-10-11
 
 ### Fixed

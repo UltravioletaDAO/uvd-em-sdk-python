@@ -90,7 +90,7 @@ from uvd_x402_sdk.wallet import WalletAdapter, EnvKeyAdapter, OWSWalletAdapter
 # - pyproject.toml derives it at build time ([tool.hatch.version])
 # - client.py derives the User-Agent from it at runtime
 # Bump it HERE only; test_version.py enforces consistency.
-__version__ = "0.9.1"
+__version__ = "0.9.2"
 
 __all__ = [
     # Client

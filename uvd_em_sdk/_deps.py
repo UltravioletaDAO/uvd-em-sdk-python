@@ -11,7 +11,7 @@ enforces the floor at import time too (this module runs it when
 with a message that names the fix instead of later with an ``ImportError``
 of one missing name.
 
-Only the floor is checked at runtime. The ceiling (``<0.95``) is the
+Only the floor is checked at runtime. The ceiling (``<0.98``) is the
 install-time pin: it keeps the next minor out until this package's suite has
 run against it.
 """
@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 
 #: What ``pyproject.toml`` declares; ``tests/test_dependencies.py`` pins both.
-UVD_X402_SDK_REQUIREMENT = "uvd-x402-sdk[wallet]>=0.93.0,<0.95"
+UVD_X402_SDK_REQUIREMENT = "uvd-x402-sdk[wallet]>=0.93.0,<0.98"
 UVD_X402_SDK_MIN_VERSION = (0, 93, 0)
 
 _RELEASE = re.compile(r"(\d+)\.(\d+)(?:\.(\d+))?")

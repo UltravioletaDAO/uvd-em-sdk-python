@@ -31,7 +31,11 @@ in ``tests/test_escrow_signing_reexport.py``):
    ``"primaryType": "ReceiveWithAuthorization"`` (the digest is unchanged).
 5. **Unverified chain warning.** A chain not in ``VERIFIED_USDC_DOMAINS`` is
    still signed with the server's domain, and a warning is logged on
-   ``uvd_x402_sdk.escrow_signing``.
+   ``uvd_x402_sdk.escrow_signing``. From uvd-x402-sdk 0.96.0 the config is
+   also checked against the SDK's escrow tables (escrow, token collector,
+   USDC, operator, fee ceiling), and from 0.97.0 a chain without a row in
+   every table, or tier windows above their ceilings, are refused
+   (``ValueError``) with nothing signed.
 
 ``build_escrow_pre_auth`` also gained an optional ninth parameter,
 ``delegation_resolver`` (EIP-7702-delegated payers); the eight positional

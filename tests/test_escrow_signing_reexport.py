@@ -20,6 +20,7 @@ import logging
 from decimal import Decimal
 
 import pytest
+import uvd_x402_sdk
 import uvd_x402_sdk.escrow_signing as sdk_escrow
 
 import uvd_em_sdk
@@ -32,6 +33,13 @@ from tests.test_escrow_signing import (
     WORKER,
     FakeWallet,
 )
+
+
+def _sdk_release():
+    from uvd_em_sdk._deps import parse_release
+
+    return parse_release(uvd_x402_sdk.__version__)
+
 
 # uvd_x402_sdk.escrow_signing.__all__ at 0.93.0: the stable public API.
 SDK_0_93_ALL = (
@@ -209,6 +217,18 @@ class TestBehaviourThatCameWithTheSDK:
             "base-sepolia": {**BASE_NETWORK, "chain_id": 84532}
         }
         assert 84532 not in em_escrow.VERIFIED_USDC_DOMAINS
+        if _sdk_release() >= (0, 96, 0):
+            # From uvd-x402-sdk 0.96.0 the SDK checks the config against its
+            # escrow tables: Base's addresses under chain 84532 contradict that
+            # chain's ESCROW_CONTRACTS row (0.96.0), and from 0.97.0 a chain
+            # without a row in every table is refused outright. Nothing signed.
+            wallet = FakeWallet()
+            with pytest.raises(ValueError, match="refusing to sign"):
+                em_escrow.build_escrow_pre_auth(
+                    cfg, "base-sepolia", PAYER, WORKER, "0.10", None, wallet
+                )
+            assert wallet.typed_data_calls == []
+            return
         with caplog.at_level(logging.WARNING, logger="uvd_x402_sdk.escrow_signing"):
             header = em_escrow.build_escrow_pre_auth(
                 cfg, "base-sepolia", PAYER, WORKER, "0.10", None, FakeWallet()
