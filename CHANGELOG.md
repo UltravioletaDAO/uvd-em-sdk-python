@@ -2,7 +2,29 @@
 
 ## [Unreleased]
 
+`__version__` is 0.9.1: what a git install of this tree reports, so it is not
+taken for the 0.9.0 on PyPI. Not released.
+
+### Fixed
+
+- `workers.register()` sends the client's Supabase JWT when it does not sign:
+  `POST /workers/register` requires a credential (ERC-8128 or a Supabase JWT,
+  as the API reference says), and a JWT-only client sent none and got 401. A
+  signing client still sends the ERC-8128 signature alone. Ported from
+  `em-plugin-sdk`, where it landed after this repository was split off.
+
 ### Changed
+
+- `uvd-x402-sdk[wallet]>=0.93.0,<0.95` (was `<0.94`): Execution Market pins
+  0.94.0 and consumes this package in the same environment. From 0.93.0 to
+  0.94.0, `escrow_signing`, `wallet` and `erc8128` are byte-identical and
+  `erc8004.supports_relayed_feedback` is identical by AST; the suite passes
+  on both.
+- `scripts/vendor_em.py --check` also compares `vendor/em/` with what EM's
+  newer `--upstream` ref (default `origin/main`) yields, and exits 1 when a
+  re-vendor would change it. It checked only SOURCE's own commit, so it stayed
+  green however far EM moved. A newer commit that yields the same vendored
+  bytes is green. The output names files and commits, never EM data.
 
 - `scripts/sync_networks.py` and `scripts/sync_enums.py` read `vendor/em/`
   instead of `../mcp_server/`. Their `--backend` option is removed, and
@@ -11,6 +33,9 @@
 
 ### Added
 
+- `scripts/upstream-check.plist.template`: the periodic `--check` as a macOS
+  LaunchAgent (fetch the authorised EM clone, then check). Not installed, no
+  secret: it uses the clone's own git credentials.
 - `vendor/em/`: the Execution Market data the parity tests compare the SDK
   against — the `NETWORK_CONFIG` fields `networks.py` mirrors and the four
   synced enums, not the backend modules — written by `scripts/vendor_em.py`
