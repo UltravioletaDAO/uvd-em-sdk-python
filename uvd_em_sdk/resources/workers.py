@@ -45,13 +45,27 @@ class WorkersResource:
         name: str | None = None,
         email: str | None = None,
     ) -> Executor:
-        """Register a new worker by wallet address."""
+        """Register a new worker by wallet address.
+
+        The endpoint is authenticated: it accepts ERC-8128 —
+        which a POST already carries whenever a wallet adapter is attached —
+        **or** a Supabase JWT. Passing ``_auth_headers()`` is what keeps the
+        JWT-only client working; without it this method sent no credential at
+        all and would answer 401. A signing client sends ONLY the signature:
+        it is the proof of wallet possession the server looks for, and a JWT
+        next to it would make the request carry two credentials (401).
+        """
         body: dict[str, Any] = {"wallet_address": wallet_address}
         if name:
             body["name"] = name
         if email:
             body["email"] = email
-        data = await self._client._request("POST", "/workers/register", json=body)
+        data = await self._client._request(
+            "POST",
+            "/workers/register",
+            json=body,
+            headers=None if self._client._sign_requests else self._auth_headers(),
+        )
         # The endpoint returns the generic SuccessResponse envelope whose
         # payload names the id ``executor_id`` — map it to ``Executor.id``
         # locally (the model is reused by direct-shape endpoints elsewhere).

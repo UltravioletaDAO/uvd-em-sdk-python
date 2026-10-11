@@ -590,6 +590,23 @@ class TestWorkers:
         assert worker.id == "exec-1"
         assert worker.wallet_address == "0x1234567890abcdef1234567890abcdef12345678"
 
+    async def test_register_sends_supabase_jwt_without_wallet(self, mock_router):
+        """POST /workers/register requires a credential (ERC-8128 or a JWT).
+        A JWT-only client (no wallet, so nothing is signed) must carry its
+        Supabase JWT, or the server answers 401."""
+        jwt = "eyJ.test.jwt"
+        route = mock_router.post("/workers/register").mock(
+            return_value=httpx.Response(
+                200, json={"success": True, "data": {"executor_id": "exec-3"}}
+            )
+        )
+        async with EMClient(supabase_jwt=jwt) as c:
+            worker = await c.workers.register(
+                "0x1234567890abcdef1234567890abcdef12345678"
+            )
+        assert worker.id == "exec-3"
+        assert route.calls.last.request.headers["authorization"] == f"Bearer {jwt}"
+
     async def test_register_direct_shape_fallback(self, mock_router, client):
         # A non-envelope body with a plain `id` still parses.
         mock_router.post("/workers/register").mock(
