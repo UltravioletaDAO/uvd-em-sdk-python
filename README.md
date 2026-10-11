@@ -7,8 +7,11 @@ Enums and the network registry are generated from the backend source of truth
 (`scripts/sync_enums.py`, `scripts/sync_networks.py`) with parity tests that
 run in this repository's CI against a pinned copy of the backend data
 (`vendor/em/`, commit and sha256 in `vendor/em/SOURCE`). CI checks the copy
-against those hashes; that the copy is what that backend commit yields is
-checked with `python scripts/vendor_em.py --em-repo <clone> --check`.
+against those hashes; that the copy is what that backend commit yields, and
+that the backend's newer `origin/main` yields the same bytes, is checked with
+`python scripts/vendor_em.py --em-repo <clone> --check` (the backend is
+private: a maintainer runs it on an authorised clone, and
+`scripts/upstream-check.plist.template` is that run scheduled, not installed).
 
 ## Replaces `em-plugin-sdk`
 
@@ -39,7 +42,7 @@ pip install uvd-em-sdk
 ```
 
 Signing is included. [`uvd-x402-sdk[wallet]`](https://pypi.org/project/uvd-x402-sdk/)
-(`>=0.93.0,<0.94`) is a dependency, not an extra: its wallet adapters sign
+(`>=0.93.0,<0.95`) is a dependency, not an extra: its wallet adapters sign
 every production write (ERC-8128), and its `uvd_x402_sdk.escrow_signing` is the
 escrow signature this package re-exports. The `[wallet]` extra of
 `em-plugin-sdk` is gone.

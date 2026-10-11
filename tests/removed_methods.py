@@ -1,16 +1,20 @@
 """The flat client methods deleted in the Phase 2 Stripe refactor (SDK-54).
 
-ONE source, two consumers:
+The list, and who reads it:
 
 * ``tests/test_readme_quickstart.py`` — keeps them out of the packaged README,
   which is the PyPI long_description and cannot be replaced once released.
-* ``tests/ci/test_docs_site_sdk_examples.py`` (repo root, not shipped) — keeps
-  them out of ``docs-site/``, which publishes ``docs.execution.market``.
+* Execution Market's ``tests/ci/test_docs_site_sdk_examples.py`` — keeps them
+  out of ``docs-site/``, which publishes ``docs.execution.market``. It used to
+  load this file by path, when this package lived in that repository; an
+  installed wheel carries no tests, so it now keeps a copy of the list.
 
 This module ships inside the sdist so the README test stays runnable from an
-unpacked release; the repo-root guard loads it by path.
+unpacked release.
 
-Adding a name here is the whole fix for a regression: both guards pick it up.
+Adding a name here fixes the README guard; Execution Market's copy has to be
+updated by hand (its guard resolves every docs example against the installed
+SDK anyway, so a method removed from now on fails there without the list).
 """
 
 # Substrings, matched literally against the raw markdown. `client.` is part of

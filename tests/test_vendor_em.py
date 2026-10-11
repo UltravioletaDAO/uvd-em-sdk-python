@@ -14,6 +14,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -362,3 +363,290 @@ def test_check_does_not_take_a_commit(tmp_path):
     )
     assert result.returncode == 2
     assert "not allowed with" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# --check against Execution Market's newer commits (the periodic job)
+# ---------------------------------------------------------------------------
+
+
+def _commit(repo: Path, tmp_path: Path, message: str) -> str:
+    _git(repo, "add", "-A")
+    _git(
+        repo,
+        "-c",
+        "user.name=test",
+        "-c",
+        "user.email=test@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        f"core.hooksPath={tmp_path / 'no-hooks'}",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        message,
+    )
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _fetched(repo: Path, sha: str) -> None:
+    """What ``git fetch origin`` leaves behind: ``origin/main`` at ``sha``."""
+    _git(repo, "update-ref", "refs/remotes/origin/main", sha)
+
+
+@pytest.fixture
+def sdk_tree(em_clone, tmp_path):
+    """This repository's two scripts in a throwaway SDK tree whose
+    ``vendor/em/`` is vendored at the fake clone's first commit: SOURCE is
+    intact, and ``--check`` runs as a maintainer runs it, as a process."""
+    repo, sha = em_clone
+    root = tmp_path / "sdk"
+    (root / "scripts").mkdir(parents=True)
+    for name in ("vendor_em.py", "sync_enums.py"):
+        (root / "scripts" / name).write_bytes(
+            (SDK_ROOT / "scripts" / name).read_bytes()
+        )
+    (root / "vendor" / "em").mkdir(parents=True)
+    for name, data in vendor.build(repo, sha).items():
+        (root / "vendor" / "em" / name).write_bytes(data)
+    return root
+
+
+def _check(root: Path, repo: Path, *extra: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, str(root / "scripts" / "vendor_em.py")]
+        + ["--em-repo", str(repo), "--check", *extra],
+        capture_output=True,
+        text=True,
+        env=_no_git_env(),
+    )
+
+
+REGISTRY = Path("mcp_server/integrations/x402/network_registry.py")
+
+
+def test_check_flags_an_upstream_that_changed_what_the_sdk_mirrors(
+    em_clone, sdk_tree, tmp_path
+):
+    """SOURCE intact, EM's registry changed on origin/main: drift. Checking
+    only SOURCE's commit, --check said OK here and stayed blind to EM."""
+    repo, pinned = em_clone
+    registry = repo / REGISTRY
+    registry.write_bytes(registry.read_bytes().replace(b'"0xA"', b'"0xA2"'))
+    head = _commit(repo, tmp_path, "the USDC address changes upstream")
+    _fetched(repo, head)
+
+    result = _check(sdk_tree, repo)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "networks.json" in result.stdout
+    assert "enums.json" not in result.stdout
+    assert head[:12] in result.stdout
+    assert f"OK — vendor/em/ is exactly what SOURCE's commit ({pinned[:12]})" in (
+        result.stdout
+    )
+
+
+def test_check_flags_an_enum_member_added_upstream(em_clone, sdk_tree, tmp_path):
+    repo, _ = em_clone
+    models = repo / "mcp_server" / "models.py"
+    models.write_bytes(
+        models.read_bytes().replace(
+            b'    ACCEPTED = "accepted"\n',
+            b'    ACCEPTED = "accepted"\n    EXPIRED = "expired"\n',
+        )
+    )
+    _fetched(repo, _commit(repo, tmp_path, "a new task status"))
+
+    result = _check(sdk_tree, repo)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "enums.json" in result.stdout
+    assert "networks.json" not in result.stdout
+
+
+def test_check_is_green_when_upstream_yields_the_same_bytes(
+    em_clone, sdk_tree, tmp_path
+):
+    """A newer EM commit is not drift by itself: EM commits every day and
+    most commits change nothing the SDK mirrors. Here the registry changes a
+    field that is never copied (the RPC URL) and a later commit touches
+    another module: the vendored bytes are the same, so it is green."""
+    repo, pinned = em_clone
+    registry = repo / REGISTRY
+    registry.write_bytes(
+        registry.read_bytes().replace(b"rpc.example.invalid", b"rpc2.example.invalid")
+    )
+    _commit(repo, tmp_path, "an RPC URL changes")
+    (repo / "mcp_server" / "other.py").write_bytes(b"X = 1\n")
+    head = _commit(repo, tmp_path, "another module")
+    _fetched(repo, head)
+
+    result = _check(sdk_tree, repo)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert head[:12] in result.stdout
+    assert head != pinned
+
+
+def test_check_reads_the_ref_it_is_given(em_clone, sdk_tree, tmp_path):
+    """--upstream names the ref; origin/main is only the default."""
+    repo, pinned = em_clone
+    _fetched(repo, pinned)
+    registry = repo / REGISTRY
+    registry.write_bytes(registry.read_bytes().replace(b'"0xA"', b'"0xA2"'))
+    head = _commit(repo, tmp_path, "the USDC address changes upstream")
+
+    assert _check(sdk_tree, repo).returncode == 0
+    flagged = _check(sdk_tree, repo, "--upstream", head)
+    assert flagged.returncode == 1, flagged.stdout + flagged.stderr
+    assert "networks.json" in flagged.stdout
+
+
+def test_check_names_a_vendored_file_that_is_gone_on_both_lines(em_clone, sdk_tree):
+    repo, pinned = em_clone
+    _fetched(repo, pinned)
+    (sdk_tree / "vendor" / "em" / "enums.json").unlink()
+
+    result = _check(sdk_tree, repo)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "DRIFT — vendor/em/ is not what SOURCE's commit yields: ['enums.json']" in (
+        result.stdout
+    )
+    assert "a re-vendor would change ['enums.json']" in result.stdout
+
+
+def test_check_against_a_ref_behind_source_is_not_drift(em_clone, sdk_tree, tmp_path):
+    """A clone that was not fetched answers with an OLDER commit than the
+    pin. That is no answer, and certainly not "re-vendor the older one"."""
+    repo, older = em_clone
+    registry = repo / REGISTRY
+    registry.write_bytes(registry.read_bytes().replace(b'"0xA"', b'"0xA2"'))
+    newer = _commit(repo, tmp_path, "EM moves on")
+    for name, data in vendor.build(repo, newer).items():  # SOURCE pins `newer`
+        (sdk_tree / "vendor" / "em" / name).write_bytes(data)
+    _fetched(repo, older)  # origin/main never fetched past `older`
+
+    result = _check(sdk_tree, repo)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f"STALE — origin/main = {older[:12]}" in result.stdout
+    assert "--commit" not in result.stdout
+    assert "UPSTREAM DRIFT" not in result.stdout
+
+
+def test_check_without_the_upstream_ref_is_not_green(em_clone, sdk_tree):
+    """A clone that was never fetched has no origin/main: that is no answer,
+    so it must not read as one."""
+    repo, _ = em_clone
+
+    result = _check(sdk_tree, repo)
+
+    assert result.returncode != 0
+    assert "origin/main" in result.stderr
+
+
+def test_check_prints_no_execution_market_content(em_clone, sdk_tree, tmp_path):
+    """EM is private: what --check prints (a log, a job's output) names
+    files and commits, never the data that changed."""
+    repo, _ = em_clone
+    registry = repo / REGISTRY
+    registry.write_bytes(registry.read_bytes().replace(b'"0xA"', b'"0xPRIVATEADDRESS"'))
+    _fetched(repo, _commit(repo, tmp_path, "the USDC address changes upstream"))
+
+    result = _check(sdk_tree, repo)
+
+    assert result.returncode == 1
+    assert "PRIVATEADDRESS" not in result.stdout + result.stderr
+
+
+def test_upstream_is_only_meaningful_with_check(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(VENDOR_SCRIPT), "--em-repo", str(tmp_path)]
+        + ["--upstream", "origin/main"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "--upstream" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# The scheduled run (scripts/upstream-check.plist.template), not installed
+# ---------------------------------------------------------------------------
+
+JOB_TEMPLATE = SDK_ROOT / "scripts" / "upstream-check.plist.template"
+JOB_PLACEHOLDERS = {"EM_CLONE", "PYTHON", "SDK_CHECKOUT", "HOME", "EVERY", "LOG"}
+
+
+def _job(**values: str) -> dict:
+    import plistlib
+
+    text = JOB_TEMPLATE.read_text(encoding="utf-8")
+    for name, value in values.items():
+        text = text.replace("{{" + name + "}}", value)
+    return plistlib.loads(text.encode("utf-8"))
+
+
+def test_the_job_template_has_only_its_placeholders():
+    """Nothing of one machine (a home path, a clone path) and nothing
+    secret: what varies is a placeholder, and the set is fixed."""
+    text = JOB_TEMPLATE.read_text(encoding="utf-8")
+    assert set(re.findall(r"\{\{([A-Z_]+)\}\}", text)) == JOB_PLACEHOLDERS
+    assert "/Users/" not in text and "C:\\" not in text
+    plist = re.sub(r"<!--.*?-->", "", text, flags=re.S)  # the prose may say "secret"
+    assert not re.search(r"token|secret|password|ghp_|github_pat_", plist, re.I)
+    # No variable through which a credential could ride along.
+    env = _job(EVERY="60")["EnvironmentVariables"]
+    assert set(env) == {"HOME", "PATH"}
+
+
+def test_the_job_fetches_then_checks_upstream_and_stops_if_the_fetch_fails():
+    job = _job(
+        EM_CLONE="/em",
+        PYTHON="/py",
+        SDK_CHECKOUT="/sdk",
+        HOME="/home",
+        EVERY="86400",
+        LOG="/log",
+    )
+    shell, flag, command = job["ProgramArguments"]
+    assert (shell, flag) == ("/bin/sh", "-c")
+    clean, pull, fetch, check = command.split(" && ")
+    # This checkout first: on main, without local edits (a stale checkout
+    # reports drift main already fixed; an edited one checks the edits).
+    assert clean == 'git -C "/sdk" diff --quiet HEAD --'
+    assert pull == 'git -C "/sdk" pull --ff-only --quiet origin main'
+    # The refspec is explicit: a clone configured without main still updates
+    # origin/main, the ref the check compares.
+    assert fetch == (
+        'git -C "/em" fetch --quiet origin +refs/heads/main:refs/remotes/origin/main'
+    )
+    assert check == (
+        'exec "/py" scripts/vendor_em.py --em-repo "/em" --check --upstream origin/main'
+    )
+    assert job["WorkingDirectory"] == "/sdk"
+    assert job["StartInterval"] == 86400
+    assert job["StandardOutPath"] == job["StandardErrorPath"] == "/log"
+
+
+def test_the_job_runs_the_script_it_names(tmp_path):
+    """The template calls flags the script accepts (argparse exits 2 on an
+    unknown one): run the check part with a clone that does not exist."""
+    job = _job(
+        EM_CLONE=str(tmp_path / "no-clone"),
+        PYTHON=sys.executable,
+        SDK_CHECKOUT=str(SDK_ROOT),
+        HOME=str(tmp_path),
+        EVERY="60",
+        LOG=str(tmp_path / "log"),
+    )
+    argv = shlex.split(job["ProgramArguments"][2].split(" && ")[-1])[1:]
+    result = subprocess.run(
+        argv, cwd=job["WorkingDirectory"], capture_output=True, text=True
+    )
+    assert result.returncode == 1, result.stderr
+    assert "git rev-parse" in result.stderr

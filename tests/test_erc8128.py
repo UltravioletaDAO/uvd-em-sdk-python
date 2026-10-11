@@ -292,6 +292,24 @@ class TestClientSigning:
         assert nonce_route.call_count == 1
         assert "signature" in route.calls.last.request.headers
 
+    async def test_workers_register_sends_only_the_signature(self, mock_router, wallet):
+        """POST /workers/register: a signing client registers with the ERC-8128
+        signature ALONE. A Supabase JWT next to it would be a second
+        credential, which the server rejects as ambiguous (401)."""
+        mock_router.get("/auth/erc8128/nonce").mock(
+            return_value=httpx.Response(200, json={"nonce": "nonce-1"})
+        )
+        route = mock_router.post("/workers/register").mock(
+            return_value=httpx.Response(
+                200, json={"success": True, "data": {"executor_id": "exec-1"}}
+            )
+        )
+        async with EMClient(wallet=wallet, supabase_jwt="eyJ.test.jwt") as client:
+            await client.workers.register(wallet.get_address())
+        headers = route.calls.last.request.headers
+        assert "signature" in headers
+        assert "eyJ.test.jwt" not in headers.get("authorization", "")
+
     async def test_submission_detail_is_signed(self, mock_router, wallet):
         """``GET /submissions/{id}`` — same worker-scoped rule: an agent
         executor has no Supabase JWT, so submissions.get must force the

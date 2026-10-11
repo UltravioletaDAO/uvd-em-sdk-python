@@ -1,4 +1,4 @@
-"""uvd-x402-sdk is a HARD dependency, >=0.93.0,<0.94 (0.9.0).
+"""uvd-x402-sdk is a HARD dependency, >=0.93.0,<0.95 (<0.94 in 0.9.0).
 
 Until 0.8.0 it was the optional ``[wallet]`` extra, pinned ``==0.91.2``. Now
 ``uvd_em_sdk.escrow_signing`` re-exports ``uvd_x402_sdk.escrow_signing``,
@@ -26,7 +26,7 @@ except ModuleNotFoundError:  # pragma: no cover - py3.10 fallback
     tomllib = None
 
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
-EXPECTED = SpecifierSet(">=0.93.0,<0.94")
+EXPECTED = SpecifierSet(">=0.93.0,<0.95")
 
 
 def _x402(requirements):
@@ -42,7 +42,8 @@ def _assert_the_requirement(req):
     assert "wallet" in req.extras, str(req)  # eth-account: what signs
     assert Version("0.92.0") not in req.specifier
     assert Version("0.93.0") in req.specifier
-    assert Version("0.94.0") not in req.specifier
+    assert Version("0.94.0") in req.specifier  # what Execution Market pins
+    assert Version("0.95.0") not in req.specifier
 
 
 @pytest.mark.skipif(tomllib is None, reason="tomllib needs Python >= 3.11")
@@ -77,7 +78,7 @@ def test_the_import_guard_states_the_same_requirement():
 
 @pytest.mark.parametrize("found", ["0.91.2", "0.92.0", "0.92.99", "0.34.0", "?"])
 def test_an_older_sdk_is_refused(found):
-    with pytest.raises(ImportError, match=r"uvd-x402-sdk\[wallet\]>=0\.93\.0,<0\.94"):
+    with pytest.raises(ImportError, match=r"uvd-x402-sdk\[wallet\]>=0\.93\.0,<0\.95"):
         _deps.require_uvd_x402_sdk(found)
 
 

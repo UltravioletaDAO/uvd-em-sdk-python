@@ -51,7 +51,12 @@ dependencies = [
     # -- this library signs money orders, so a foreign release must not
     # arrive on its own. uvd_em_sdk/_deps.py re-checks the floor at import;
     # tests/test_dependencies.py pins both ends here and there.
-    "uvd-x402-sdk[wallet]>=0.93.0,<0.94",
+    # Ceiling <0.94 -> <0.95 (0.9.1): Execution Market pins 0.94.0 and
+    # consumes this package in the same environment. 0.93.0 -> 0.94.0 leaves
+    # escrow_signing, wallet and erc8128 byte-identical and
+    # erc8004.supports_relayed_feedback identical by AST; the suite passes on
+    # both (CHANGELOG 0.9.1).
+    "uvd-x402-sdk[wallet]>=0.93.0,<0.95",
 ]
 
 [project.optional-dependencies]

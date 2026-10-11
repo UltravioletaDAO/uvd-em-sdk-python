@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The periodic run of `scripts/vendor_em.py - -check`: a macOS LaunchAgent, NOT installed by this
+  repository. It brings this repository's checkout to main (refusing one with local edits), fetches
+  the Execution Market clone, then asks both questions of the check (is vendor/em/ what SOURCE's
+  commit yields? does EM's new origin/main yield the same bytes?). Exit 0 is two yeses; anything
+  else - drift, a stale or edited checkout, a failed fetch, a missing clone - is not.
+  {{SDK_CHECKOUT}} is a clone of this repository kept on main for this job: a checkout behind main
+  would report the vendored copy main already moved past, and one with edits would check the edits.
+
+  Private by construction. EM is a private repository: the job reads it through a clone this machine
+  is already authorised to fetch (its own SSH key or credential helper). This template creates no
+  secret and must never carry one. The check prints file names and commits, never EM data; still,
+  keep {{LOG}} on this machine, never in a repository or a public CI artifact.
+
+  To install, by hand: replace every {{...}} (absolute paths; {{EVERY}} in seconds, 86400 = daily),
+  save it as ~/Library/LaunchAgents/com.ultravioleta.uvd-em-sdk.upstream-check.plist and run
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ultravioleta.uvd-em-sdk.upstream-check.plist
+  The result: the last lines of {{LOG}}, and "last exit code" in
+  launchctl print gui/$(id -u)/com.ultravioleta.uvd-em-sdk.upstream-check
+  `&&` is deliberate: after a failed fetch the check would compare a stale origin/main and could
+  read green.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.ultravioleta.uvd-em-sdk.upstream-check</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>git -C "{{SDK_CHECKOUT}}" diff --quiet HEAD -- &amp;&amp; git -C "{{SDK_CHECKOUT}}" pull --ff-only --quiet origin main &amp;&amp; git -C "{{EM_CLONE}}" fetch --quiet origin +refs/heads/main:refs/remotes/origin/main &amp;&amp; exec "{{PYTHON}}" scripts/vendor_em.py --em-repo "{{EM_CLONE}}" --check --upstream origin/main</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>{{SDK_CHECKOUT}}</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>{{HOME}}</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>StartInterval</key>
+	<integer>{{EVERY}}</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>{{LOG}}</string>
+	<key>StandardErrorPath</key>
+	<string>{{LOG}}</string>
+</dict>
+</plist>
