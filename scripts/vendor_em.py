@@ -19,11 +19,26 @@ and ``scripts/sync_enums.py`` consume:
     hashes on every run, CI included; only ``--check``, which needs the EM
     clone, can confirm the commit and the upstream hashes.
 
+``--check`` answers two questions, each on its own line, and exits 1 if
+either is no:
+
+  1. Is ``vendor/em/`` exactly what SOURCE's commit yields? (the pin)
+  2. Does EM's newer ``--upstream`` ref (default ``origin/main``: fetch the
+     clone first) yield the same vendored bytes? A newer commit is not drift
+     by itself — most EM commits change nothing the SDK mirrors — so this
+     compares the bytes ``vendor/em/`` would get, not the commit or the
+     upstream module's sha256.
+
+It prints file names and commits, never EM data: EM is private, and the
+output of a scheduled run ends up in a log. ``scripts/upstream-check.plist.template``
+is that scheduled run, not installed.
+
 Usage (from the repository root, after ``git fetch`` in the EM clone)::
 
     python scripts/vendor_em.py --em-repo ../execution-market               # vendor origin/main
     python scripts/vendor_em.py --em-repo ../execution-market --commit <sha>
-    python scripts/vendor_em.py --em-repo ../execution-market --check       # exit 1 if vendor/em/ is not SOURCE's commit
+    python scripts/vendor_em.py --em-repo ../execution-market --check       # exit 1 if vendor/em/ is not SOURCE's commit, or origin/main moved past it
+    python scripts/vendor_em.py --em-repo ../execution-market --check --upstream <ref>
 
 then ``python scripts/sync_networks.py && python scripts/sync_enums.py &&
 ruff format .`` to carry a change into the SDK.
@@ -45,6 +60,9 @@ SDK_ROOT = SCRIPT_DIR.parent
 VENDOR_DIR = SDK_ROOT / "vendor" / "em"
 
 REPO = "UltravioletaDAO/execution-market"
+
+#: The ref ``--check`` compares the pin against: EM's main, once fetched.
+DEFAULT_UPSTREAM = "origin/main"
 
 #: Vendored file -> the EM module it is derived from (POSIX, as git names it).
 UPSTREAM: dict[str, str] = {
@@ -217,6 +235,32 @@ def check(em_repo: Path, vendor_dir: Path = VENDOR_DIR) -> list[str]:
     ]
 
 
+def check_upstream(
+    em_repo: Path, ref: str, vendor_dir: Path = VENDOR_DIR
+) -> tuple[str, list[str]]:
+    """``(sha of ref, vendored files a re-vendor at ref would change)``.
+
+    Compared on the bytes of the data files, not on the commit or the
+    upstream module's sha256: a commit that touches only what is never
+    copied (an RPC URL, a comment, another module) yields the same bytes and
+    is not drift. SOURCE is left out — its commit line differs for every
+    newer ref by construction.
+    """
+    commit = resolve_commit(em_repo, ref)
+    expected = build(em_repo, commit)
+    return commit, [
+        name
+        for name in UPSTREAM
+        if not (vendor_dir / name).is_file()
+        or (vendor_dir / name).read_bytes() != expected[name]
+    ]
+
+
+def committed_at(em_repo: Path, commit: str) -> str:
+    """The commit date, so a log shows how fresh the compared ref was."""
+    return _git(em_repo, "log", "-1", "--format=%cI", commit).decode().strip()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -227,23 +271,52 @@ def main() -> int:
     mode.add_argument(
         "--check",
         action="store_true",
-        help="rebuild at SOURCE's commit and exit 1 if vendor/em/ differs",
+        help="exit 1 if vendor/em/ is not what SOURCE's commit yields, or if "
+        "the --upstream ref yields other bytes",
+    )
+    parser.add_argument(
+        "--upstream",
+        metavar="REF",
+        help=f"with --check: the newer EM ref to compare (default {DEFAULT_UPSTREAM}"
+        "; fetch the clone first)",
     )
     args = parser.parse_args()
+    if args.upstream is not None and not args.check:
+        parser.error("--upstream is only meaningful with --check")
 
     if args.check:
+        pinned = parse_source((VENDOR_DIR / "SOURCE").read_text(encoding="utf-8"))
+        status = 0
         drifted = check(args.em_repo)
         if drifted:
-            pinned = parse_source((VENDOR_DIR / "SOURCE").read_text(encoding="utf-8"))
             print(f"DRIFT — vendor/em/ is not what SOURCE's commit yields: {drifted}")
             print(
                 "Fix: python scripts/vendor_em.py --em-repo "
                 f"{args.em_repo} --commit {pinned['commit']} (same pin), "
                 "or --commit <newer sha> to move it"
             )
-            return 1
-        print("OK — vendor/em/ is exactly what SOURCE's commit yields")
-        return 0
+            status = 1
+        else:
+            print(
+                f"OK — vendor/em/ is exactly what SOURCE's commit "
+                f"({pinned['commit'][:12]}) yields"
+            )
+
+        ref = args.upstream or DEFAULT_UPSTREAM
+        head, ahead = check_upstream(args.em_repo, ref)
+        seen = f"{ref} = {head[:12]}, committed {committed_at(args.em_repo, head)}"
+        if ahead:
+            print(f"UPSTREAM DRIFT — {seen}: a re-vendor would change {ahead}")
+            print(
+                "Fix: python scripts/vendor_em.py --em-repo "
+                f"{args.em_repo} --commit {head}, then python "
+                "scripts/sync_networks.py && python scripts/sync_enums.py && "
+                "ruff format . (the parity tests name what the SDK must follow)"
+            )
+            status = 1
+        else:
+            print(f"OK — {seen}: same vendored bytes, nothing to re-vendor")
+        return status
 
     commit = resolve_commit(args.em_repo, args.commit or "origin/main")
     VENDOR_DIR.mkdir(parents=True, exist_ok=True)
