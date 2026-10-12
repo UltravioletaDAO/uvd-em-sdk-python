@@ -1,25 +1,30 @@
 """Equivalence suite for the single retry policy (F3-4).
 
-ONE decision table (status/exception -> retry yes/no) run against the three
-client-side implementations:
+ONE decision table (status/exception -> retry yes/no) that every client-side
+implementation must agree with:
 
-  1. ``uvd_em_sdk.retry.request_with_retry``  (canonical)
-  2. ``execution_market._signer.with_backoff``   (sdk/python, zero-dep)
-  3. ``em_cli.api.EMAPIClient._request_with_retry`` (CLI)
+  1. ``uvd_em_sdk.retry.request_with_retry``  (canonical) — tested here;
+  2. ``execution_market._signer.with_backoff``   (EM's sdk/python, zero-dep)
+  3. ``em_cli.api.EMAPIClient._request_with_retry`` (EM's CLI)
 
 plus explicit tests of the tx-hash double-settle guard (invariant 2) and the
 Idempotency-Key persistence across attempts. The backend policy in
 ``mcp_server/integrations/_http_retry.py`` stays as the reference — its own
 suite lives in ``mcp_server/tests/test_facilitator_retries.py``.
 
-Like ``test_networks_sync.py``, the cross-package legs run wherever the repo
-checkout includes ``sdk/python`` and ``cli/src`` (CI does); they are skipped
-for a standalone SDK install.
+Legs 2 and 3 live where their code does: Execution Market (private; this
+repository is public, so its code is not copied here) runs all three legs in
+``cli/tests/test_retry.py``, job ``sdk-tests``, against the uvd-em-sdk it pins.
+Here they skipped (they looked for ``sdk/python`` and ``cli/src`` next to the
+checkout), so they are gone; what ties them to this file is the table:
+``vendor/em/retry.json`` is EM's, at ``vendor/em/SOURCE``'s commit, and
+:func:`test_the_decision_table_is_execution_markets` requires this one to be
+the same. Nothing here skips (``tests/test_parity_runs.py`` checks it).
 """
 
 from __future__ import annotations
 
-import sys
+import json
 from pathlib import Path
 
 import httpx
@@ -27,22 +32,8 @@ import pytest
 
 from uvd_em_sdk.retry import request_with_retry
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SDK_PY = REPO_ROOT / "sdk" / "python"
-CLI_SRC = REPO_ROOT / "cli" / "src"
-_HAS_SIBLINGS = SDK_PY.is_dir() and CLI_SRC.is_dir()
-
-if _HAS_SIBLINGS:
-    for _p in (str(SDK_PY), str(CLI_SRC)):
-        if _p not in sys.path:
-            sys.path.insert(0, _p)
-    from execution_market._signer import with_backoff
-    from em_cli.api import APIError, EMAPIClient
-
-requires_siblings = pytest.mark.skipif(
-    not _HAS_SIBLINGS,
-    reason="sdk/python or cli/src not present (standalone SDK install)",
-)
+#: EM's decision table (scripts/vendor_em.py, from EM's cli/tests/test_retry.py).
+VENDORED = Path(__file__).resolve().parents[1] / "vendor" / "em" / "retry.json"
 
 # ---------------------------------------------------------------------------
 # THE decision table — every implementation must agree with it.
@@ -78,14 +69,41 @@ TX_HASH_BODIES = [
 ]
 
 
-def _status_error(status: int, body: dict | None = None) -> httpx.HTTPStatusError:
-    request = httpx.Request("POST", "https://t.local/api/v1/x")
-    response = httpx.Response(
-        status,
-        json=body if body is not None else {"detail": "boom"},
-        request=request,
+def _as_vendored() -> dict:
+    """This file's tables in ``vendor/em/retry.json``'s shape."""
+    return {
+        "STATUS_TABLE": [list(row) for row in STATUS_TABLE],
+        "EXCEPTION_TABLE": [
+            [f"httpx.{exc.__name__}", retry] for exc, retry in EXCEPTION_TABLE
+        ],
+        "TX_HASH_BODIES": TX_HASH_BODIES,
+    }
+
+
+def _tables_that_differ(em: dict) -> list[str]:
+    """The names of this file's tables that are not EM's ``em``."""
+    return [name for name, table in _as_vendored().items() if em.get(name) != table]
+
+
+def test_the_decision_table_is_execution_markets():
+    """EM's CI proves its sdk/python and its CLI against EM's table; this file
+    proves the SDK against this one. They must be the same table, so a policy
+    change here that EM has not made fails here, in this PR."""
+    em = json.loads(VENDORED.read_text(encoding="utf-8"))
+    assert all(getattr(httpx, exc.__name__) is exc for exc, _ in EXCEPTION_TABLE)
+    assert _tables_that_differ(em) == [], (
+        "differs from Execution Market's (vendor/em/retry.json): change the "
+        "policy in EM's sdk/python and CLI too, then re-vendor with "
+        "python scripts/vendor_em.py --em-repo <EM clone>"
     )
-    return httpx.HTTPStatusError(f"HTTP {status}", request=request, response=response)
+
+
+@pytest.mark.parametrize("name", ["STATUS_TABLE", "EXCEPTION_TABLE", "TX_HASH_BODIES"])
+def test_a_drift_of_each_table_is_named(name: str):
+    """Every table is compared: one row less in it, that table is named."""
+    em = json.loads(json.dumps(_as_vendored()))
+    em[name] = em[name][:-1]
+    assert _tables_that_differ(em) == [name]
 
 
 # ---------------------------------------------------------------------------
@@ -199,114 +217,3 @@ async def test_plugin_sdk_idempotency_key_persists_signature_regenerates():
         )
     assert seen_keys == ["k-1", "k-1"]
     assert seen_sigs == ["sig-1", "sig-2"]
-
-
-# ---------------------------------------------------------------------------
-# 2. sdk/python — execution_market._signer.with_backoff (zero-dep, in-place fix)
-# ---------------------------------------------------------------------------
-
-
-@requires_siblings
-@pytest.mark.parametrize("status,should_retry", STATUS_TABLE)
-async def test_sdk_python_with_backoff_status_table(status: int, should_retry: bool):
-    calls = 0
-
-    async def fn():
-        nonlocal calls
-        calls += 1
-        raise _status_error(status)
-
-    with pytest.raises(httpx.HTTPStatusError):
-        await with_backoff(fn, tries=2, base=0)
-    assert calls == (2 if should_retry else 1)
-
-
-@requires_siblings
-@pytest.mark.parametrize("exc_type,should_retry", EXCEPTION_TABLE)
-async def test_sdk_python_with_backoff_exception_table(exc_type, should_retry: bool):
-    calls = 0
-
-    async def fn():
-        nonlocal calls
-        calls += 1
-        raise exc_type("boom")
-
-    with pytest.raises(exc_type):
-        await with_backoff(fn, tries=2, base=0)
-    assert calls == (2 if should_retry else 1)
-
-
-# ---------------------------------------------------------------------------
-# 3. CLI — em_cli.api.EMAPIClient._request_with_retry
-# ---------------------------------------------------------------------------
-
-
-class _StubOws:
-    """Stands in for OwsEM8128Client: raises what the test dictates."""
-
-    def __init__(self, exc_factory):
-        self.calls = 0
-        self._exc_factory = exc_factory
-
-    async def get(self, path):
-        self.calls += 1
-        raise self._exc_factory()
-
-    async def post(self, path, data=None, extra_headers=None):
-        self.calls += 1
-        raise self._exc_factory()
-
-
-def _cli_client(exc_factory, max_retries: int = 1):
-    client = EMAPIClient(
-        wallet_name="test-wallet",
-        wallet_address="0x" + "ab" * 20,
-        chain_id=8453,
-        base_url="https://t.local",
-        max_retries=max_retries,
-    )
-    client.RETRY_DELAY = 0.0  # instance attr shadows the class constant
-    stub = _StubOws(exc_factory)
-    client._ows = stub
-    return client, stub
-
-
-@requires_siblings
-@pytest.mark.parametrize("status,should_retry", STATUS_TABLE)
-def test_cli_status_table(status: int, should_retry: bool):
-    client, stub = _cli_client(lambda: _status_error(status))
-    with pytest.raises(APIError) as excinfo:
-        client._request_with_retry("GET", "/api/v1/x")
-    assert excinfo.value.status_code == status
-    assert stub.calls == (2 if should_retry else 1)
-
-
-@requires_siblings
-@pytest.mark.parametrize("exc_type,should_retry", EXCEPTION_TABLE)
-def test_cli_exception_table(exc_type, should_retry: bool):
-    client, stub = _cli_client(lambda: exc_type("boom"))
-    with pytest.raises(APIError):
-        client._request_with_retry("GET", "/api/v1/x")
-    assert stub.calls == (2 if should_retry else 1)
-
-
-@requires_siblings
-@pytest.mark.parametrize("body", TX_HASH_BODIES)
-def test_cli_tx_hash_guard(body: dict):
-    """5xx WITH a tx hash raises immediately — never retried."""
-    client, stub = _cli_client(lambda: _status_error(500, body), max_retries=2)
-    with pytest.raises(APIError) as excinfo:
-        client._request_with_retry("POST", "/api/v1/x", json_body={})
-    assert excinfo.value.status_code == 500
-    assert stub.calls == 1, "response with tx hash must not be retried (double-settle)"
-
-
-@requires_siblings
-def test_cli_5xx_without_tx_hash_still_retries():
-    """Control: same 500 but no tx hash in the body — retry proceeds."""
-    client, stub = _cli_client(
-        lambda: _status_error(500, {"success": False, "transaction": {}})
-    )
-    with pytest.raises(APIError):
-        client._request_with_retry("POST", "/api/v1/x", json_body={})
-    assert stub.calls == 2
