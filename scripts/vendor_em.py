@@ -40,8 +40,15 @@ either is no:
      instead of proposing to vendor an older commit.
 
 It prints file names and commits, never EM data: EM is private, and the
-output of a scheduled run ends up in a log. ``scripts/upstream-check.plist.template``
-is that scheduled run, not installed.
+output of a scheduled run ends up in a log. ``--public-log`` is for a log
+anyone can read (``.github/workflows/em-drift.yml``, the weekly run: this
+repository is public, so is its Actions log) and prints less: the vendored
+file names and SOURCE's commit, both already published here, and nothing it
+learnt from the clone — not the newer ref's commit or date, not an error
+message or a traceback (a ``SyntaxError`` quotes the line of EM it failed
+on): a failure is named by its exception class alone.
+``scripts/upstream-check.plist.template`` is the same check scheduled on a
+maintainer's machine, not installed.
 
 Usage (from the repository root, after ``git fetch`` in the EM clone)::
 
@@ -49,6 +56,7 @@ Usage (from the repository root, after ``git fetch`` in the EM clone)::
     python scripts/vendor_em.py --em-repo ../execution-market --commit <sha>
     python scripts/vendor_em.py --em-repo ../execution-market --check       # exit 1 if vendor/em/ is not SOURCE's commit, or origin/main moved past it
     python scripts/vendor_em.py --em-repo ../execution-market --check --upstream <ref>
+    python scripts/vendor_em.py --em-repo ../execution-market --check --public-log  # for a public log
 
 then ``python scripts/sync_networks.py && python scripts/sync_enums.py &&
 ruff format .`` to carry a change into the SDK (a change of ``retry.json`` is
@@ -59,13 +67,15 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import hashlib
+import io
 import json
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SDK_ROOT = SCRIPT_DIR.parent
@@ -352,6 +362,83 @@ def committed_at(em_repo: Path, commit: str) -> str:
     return datetime.fromtimestamp(int(epoch), tz=timezone.utc).isoformat()
 
 
+def run_check(
+    em_repo: Path,
+    ref: str,
+    say: Callable[[str], None],
+    public: bool = False,
+    vendor_dir: Path = VENDOR_DIR,
+) -> int:
+    """``--check``: both questions, a line each (and a ``Fix:`` line under a
+    no) through ``say``; 0 is two yeses. ``public`` leaves out what only the
+    clone knows (``ref``'s commit and date) and the clone's path."""
+    pinned = parse_source((vendor_dir / "SOURCE").read_text(encoding="utf-8"))
+    clone = "<EM clone>" if public else em_repo
+    status = 0
+    drifted = check(em_repo, vendor_dir)
+    if drifted:
+        say(f"DRIFT — vendor/em/ is not what SOURCE's commit yields: {drifted}")
+        say(
+            f"Fix: python scripts/vendor_em.py --em-repo {clone} "
+            f"--commit {pinned['commit']} (same pin), "
+            "or --commit <newer sha> to move it"
+        )
+        status = 1
+    else:
+        say(
+            f"OK — vendor/em/ is exactly what SOURCE's commit "
+            f"({pinned['commit'][:12]}) yields"
+        )
+
+    head = resolve_commit(em_repo, ref)
+    seen = ref
+    if not public:
+        seen = f"{ref} = {head[:12]}, committed {committed_at(em_repo, head)}"
+    if not contains(em_repo, pinned["commit"], head):
+        say(
+            f"STALE — {seen} does not contain SOURCE's commit "
+            f"({pinned['commit'][:12]}): fetch the EM clone and run again"
+        )
+        return 1
+    _, ahead = check_upstream(em_repo, head, vendor_dir)
+    if ahead:
+        say(f"UPSTREAM DRIFT — {seen}: a re-vendor would change {ahead}")
+        commit = "<the sha --check names on a clone>" if public else head
+        say(
+            f"Fix: python scripts/vendor_em.py --em-repo {clone} --commit {commit}, "
+            "then python scripts/sync_networks.py && python scripts/sync_enums.py "
+            "&& ruff format . (the parity tests name what the SDK must follow)"
+        )
+        status = 1
+    else:
+        say(f"OK — {seen}: same vendored bytes, nothing to re-vendor")
+    return status
+
+
+def public_check(em_repo: Path, ref: str, vendor_dir: Path = VENDOR_DIR) -> int:
+    """``--check --public-log``: ``run_check(public=True)``, and its lines are
+    all that reaches the output. Anything else written while it runs (a
+    warning about EM's code, say) is dropped, and a failure is named by its
+    exception class, not its message: a ``SyntaxError`` quotes the EM line it
+    failed on, and git's stderr is not this script's to vouch for."""
+    out = sys.stdout
+
+    def say(line: str) -> None:
+        print(line, file=out, flush=True)
+
+    dropped = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(dropped), contextlib.redirect_stderr(dropped):
+            return run_check(em_repo, ref, say, public=True, vendor_dir=vendor_dir)
+    except (Exception, SystemExit) as exc:
+        say(
+            f"ERROR — the check did not finish ({type(exc).__name__}); its message "
+            "is left out of a public log, it may quote Execution Market. Run it "
+            "on a clone: python scripts/vendor_em.py --em-repo <EM clone> --check"
+        )
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -371,50 +458,23 @@ def main() -> int:
         help=f"with --check: the newer EM ref to compare (default {DEFAULT_UPSTREAM}"
         "; fetch the clone first)",
     )
+    parser.add_argument(
+        "--public-log",
+        action="store_true",
+        help="with --check: print only what is already public (vendored file "
+        "names, SOURCE's commit), for a log anyone can read",
+    )
     args = parser.parse_args()
     if args.upstream is not None and not args.check:
         parser.error("--upstream is only meaningful with --check")
+    if args.public_log and not args.check:
+        parser.error("--public-log is only meaningful with --check")
 
     if args.check:
-        pinned = parse_source((VENDOR_DIR / "SOURCE").read_text(encoding="utf-8"))
-        status = 0
-        drifted = check(args.em_repo)
-        if drifted:
-            print(f"DRIFT — vendor/em/ is not what SOURCE's commit yields: {drifted}")
-            print(
-                "Fix: python scripts/vendor_em.py --em-repo "
-                f"{args.em_repo} --commit {pinned['commit']} (same pin), "
-                "or --commit <newer sha> to move it"
-            )
-            status = 1
-        else:
-            print(
-                f"OK — vendor/em/ is exactly what SOURCE's commit "
-                f"({pinned['commit'][:12]}) yields"
-            )
-
         ref = args.upstream or DEFAULT_UPSTREAM
-        head = resolve_commit(args.em_repo, ref)
-        seen = f"{ref} = {head[:12]}, committed {committed_at(args.em_repo, head)}"
-        if not contains(args.em_repo, pinned["commit"], head):
-            print(
-                f"STALE — {seen} does not contain SOURCE's commit "
-                f"({pinned['commit'][:12]}): fetch the EM clone and run again"
-            )
-            return 1
-        _, ahead = check_upstream(args.em_repo, head)
-        if ahead:
-            print(f"UPSTREAM DRIFT — {seen}: a re-vendor would change {ahead}")
-            print(
-                "Fix: python scripts/vendor_em.py --em-repo "
-                f"{args.em_repo} --commit {head}, then python "
-                "scripts/sync_networks.py && python scripts/sync_enums.py && "
-                "ruff format . (the parity tests name what the SDK must follow)"
-            )
-            status = 1
-        else:
-            print(f"OK — {seen}: same vendored bytes, nothing to re-vendor")
-        return status
+        if args.public_log:
+            return public_check(args.em_repo, ref)
+        return run_check(args.em_repo, ref, print)
 
     commit = resolve_commit(args.em_repo, args.commit or "origin/main")
     VENDOR_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `scripts/vendor_em.py --check --public-log`: the same two answers, for a
+  log anyone can read. It prints the vendored file names and SOURCE's commit,
+  both already public, and nothing learnt from the EM clone: not the newer
+  ref's commit or date, not an error message or a traceback (a `SyntaxError`
+  quotes the EM line it failed on). A failure is named by its exception class.
+- `.github/workflows/em-drift.yml` (the repository's, not in the sdist):
+  `--check --public-log` every Monday and on demand, against a fresh clone of
+  EM's `main` read with a read-only deploy key (secret `EM_DEPLOY_KEY` of the
+  `em-drift` environment, `main` only; every run is red until it is set). A
+  failed clone is named by a fixed line, not by git's words. The drift used to
+  surface only when someone ran `--check` by hand. Setup and how to read a
+  red: `docs/em-drift-check.md`.
+
 ## [0.9.1] — 2026-10-11
 
 ### Fixed

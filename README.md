@@ -12,9 +12,11 @@ its other clients against (`vendor/em/retry.json`, `tests/test_retry.py`).
 CI checks the copy against those hashes; that the copy is what that backend
 commit yields, and that the backend's newer `origin/main` yields the same
 bytes, is checked with
-`python scripts/vendor_em.py --em-repo <clone> --check` (the backend is
-private: a maintainer runs it on an authorised clone, and
-`scripts/upstream-check.plist.template` is that run scheduled, not installed).
+`python scripts/vendor_em.py --em-repo <clone> --check`, every Monday by
+`.github/workflows/em-drift.yml` (the backend is private: the workflow reads
+it with a read-only deploy key, and its public log says only what this
+repository already publishes; a maintainer can also run it on an authorised
+clone).
 
 ## Replaces `em-plugin-sdk`
 

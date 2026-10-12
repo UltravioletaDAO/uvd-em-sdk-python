@@ -2,7 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   The periodic run of `scripts/vendor_em.py - -check`: a macOS LaunchAgent, NOT installed by this
-  repository. It brings this repository's checkout to main (refusing one with local edits), fetches
+  repository. The weekly run is .github/workflows/em-drift.yml (a deploy key, a public log); this is
+  the same check from a maintainer's machine, with its own access to EM and a log that stays there.
+  It brings this repository's checkout to main (refusing one with local edits), fetches
   the Execution Market clone, then asks both questions of the check (is vendor/em/ what SOURCE's
   commit yields? does EM's new origin/main yield the same bytes?). Exit 0 is two yeses; anything
   else - drift, a stale or edited checkout, a failed fetch, a missing clone - is not.

@@ -1,0 +1,88 @@
+name: em-drift
+
+# Does Execution Market's main still yield vendor/em/? scripts/vendor_em.py
+# --check against a fresh clone of EM's main, weekly and on demand. Green is
+# two yeses. Red is drift (re-vendor), a stale pin, or a check that could not
+# run (no deploy key, a failed clone): docs/em-drift-check.md has the one-time
+# setup and what to do with each red.
+#
+# EM is PRIVATE; this repository, and so this workflow's log, is PUBLIC:
+#   - the key is a secret of the `em-drift` environment, whose deployment
+#     branches are main alone: only a job on main that names it reads the key
+#     (not a PR, not another branch dispatched by hand). Create it before
+#     this file first runs on main: docs/em-drift-check.md, step 1;
+#   - no pull_request trigger: a fork's PR never runs this job;
+#   - EM is cloned by hand, quietly: main only, no tags, no blobs (git show
+#     fetches the few the check reads). actions/checkout prints the commit it
+#     checks out, and with the fetch-depth: 0 the check needs (SOURCE's
+#     commit and its ancestry), every branch and tag name of EM;
+#   - a failed clone is named by a fixed line, never by git's or ssh's words;
+#   - --public-log prints the vendored file names and SOURCE's commit, both
+#     already public here, and nothing learnt from the clone (not the newer
+#     commit, its date, nor an error message);
+#   - no cache, no artifact. The key and the clone live in $RUNNER_TEMP, which
+#     the runner empties at the end of the job.
+# tests/test_vendor_em.py holds each of these and runs both steps' scripts.
+
+on:
+  schedule:
+    - cron: "23 7 * * 1" # Mondays, 07:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read # checkout of this repository only
+
+jobs:
+  em-drift:
+    name: vendor/em/ against Execution Market's main
+    # This repository by id: a fork has no key (a weekly red there would say
+    # nothing), and a rename must not turn every run into a silent skip.
+    if: github.repository_id == '1393883838'
+    environment: em-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Clone Execution Market's main (read-only deploy key)
+        env:
+          EM_DEPLOY_KEY: ${{ secrets.EM_DEPLOY_KEY }}
+          EM_REMOTE: git@github.com:UltravioletaDAO/execution-market.git
+          # GitHub's published host key (https://api.github.com/meta): a
+          # server that is not GitHub could serve a fake EM and read green.
+          HOST_KEY: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+        run: |
+          if [ -z "$EM_DEPLOY_KEY" ]; then
+            echo "::error::Secret EM_DEPLOY_KEY of environment em-drift is not set, so the check did not run (docs/em-drift-check.md)"
+            exit 1
+          fi
+          umask 077
+          printf '%s\n' "$EM_DEPLOY_KEY" > "$RUNNER_TEMP/em_key"
+          printf 'github.com %s\n' "$HOST_KEY" > "$RUNNER_TEMP/known_hosts"
+          if ! git clone --quiet --no-checkout --single-branch --branch main --no-tags \
+            --filter=blob:none \
+            --config "core.sshCommand=ssh -i '$RUNNER_TEMP/em_key' -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
+            "$EM_REMOTE" "$RUNNER_TEMP/em" 2> "$RUNNER_TEMP/clone.err"; then
+            # git's and ssh's own words stay off a public log: a known cause
+            # is named, anything else is reproduced with the key, not read here.
+            cause="unknown cause"
+            for known in "Permission denied (publickey)" "Repository not found" "Host key verification failed"; do
+              if grep -qF "$known" "$RUNNER_TEMP/clone.err"; then cause="$known"; fi
+            done
+            echo "::error::The clone of Execution Market's main failed ($cause), so the check did not run (docs/em-drift-check.md)"
+            exit 1
+          fi
+
+      - name: Check vendor/em/ against it
+        run: |
+          status=0
+          python scripts/vendor_em.py --em-repo "$RUNNER_TEMP/em" --check --public-log > "$RUNNER_TEMP/verdict" || status=$?
+          cat "$RUNNER_TEMP/verdict"
+          { echo '```'; cat "$RUNNER_TEMP/verdict"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
