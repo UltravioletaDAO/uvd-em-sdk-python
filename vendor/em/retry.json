@@ -1,0 +1,77 @@
+{
+  "STATUS_TABLE": [
+    [
+      400,
+      false
+    ],
+    [
+      401,
+      false
+    ],
+    [
+      403,
+      false
+    ],
+    [
+      404,
+      false
+    ],
+    [
+      409,
+      false
+    ],
+    [
+      422,
+      false
+    ],
+    [
+      429,
+      true
+    ],
+    [
+      500,
+      true
+    ],
+    [
+      502,
+      true
+    ],
+    [
+      503,
+      true
+    ],
+    [
+      504,
+      true
+    ]
+  ],
+  "EXCEPTION_TABLE": [
+    [
+      "httpx.ConnectError",
+      true
+    ],
+    [
+      "httpx.ReadTimeout",
+      true
+    ]
+  ],
+  "TX_HASH_BODIES": [
+    {
+      "transaction": {
+        "hash": "0xabc"
+      }
+    },
+    {
+      "transaction": "0xabc"
+    },
+    {
+      "txHash": "0xabc"
+    },
+    {
+      "tx_hash": "0xabc"
+    },
+    {
+      "transaction_hash": "0xabc"
+    }
+  ]
+}

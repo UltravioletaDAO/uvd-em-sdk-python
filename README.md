@@ -6,9 +6,12 @@ payments. Async, typed (Pydantic v2), resource-namespaced (Stripe pattern).
 Enums and the network registry are generated from the backend source of truth
 (`scripts/sync_enums.py`, `scripts/sync_networks.py`) with parity tests that
 run in this repository's CI against a pinned copy of the backend data
-(`vendor/em/`, commit and sha256 in `vendor/em/SOURCE`). CI checks the copy
-against those hashes; that the copy is what that backend commit yields, and
-that the backend's newer `origin/main` yields the same bytes, is checked with
+(`vendor/em/`; commit, commit date and sha256 in `vendor/em/SOURCE`). The
+retry policy is held the same way to the decision table Execution Market tests
+its other clients against (`vendor/em/retry.json`, `tests/test_retry.py`).
+CI checks the copy against those hashes; that the copy is what that backend
+commit yields, and that the backend's newer `origin/main` yields the same
+bytes, is checked with
 `python scripts/vendor_em.py --em-repo <clone> --check` (the backend is
 private: a maintainer runs it on an authorised clone, and
 `scripts/upstream-check.plist.template` is that run scheduled, not installed).
