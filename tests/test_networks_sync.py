@@ -4,7 +4,8 @@ The backend dict lives in Execution Market (private), in
 ``mcp_server/integrations/x402/network_registry.py``; this repository compares
 against the fields the SDK reads, vendored at a pinned commit in
 ``vendor/em/networks.json`` (``vendor/em/SOURCE``; ``tests/test_vendor_em.py``
-checks the hashes). No skip: it runs in a standalone checkout, CI included.
+checks the hashes). No skip: it runs in a standalone checkout, CI included, and
+``tests/test_parity_runs.py`` fails if it skips or stops catching a drift.
 """
 
 import importlib.util
