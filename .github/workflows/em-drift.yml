@@ -3,8 +3,11 @@ name: em-drift
 # Does Execution Market's main still yield vendor/em/? scripts/vendor_em.py
 # --check against a fresh clone of EM's main, weekly and on demand. Green is
 # two yeses. Red is drift (re-vendor), a stale pin, or a check that could not
-# run (no deploy key, a failed clone): docs/em-drift-check.md has the one-time
-# setup and what to do with each red.
+# run for a reason someone has to fix (no deploy key, a refused one, an
+# unknown failure). A network failure, in the clone or during the check, is
+# not drift: a ::warning:: and a `NETWORK —` line in the summary, and the run
+# stays green. docs/em-drift-check.md has the one-time setup and what to do
+# with each red.
 #
 # EM is PRIVATE; this repository, and so this workflow's log, is PUBLIC:
 #   - the key is a secret of the `em-drift` environment, whose deployment
@@ -16,7 +19,9 @@ name: em-drift
 #     fetches the few the check reads). actions/checkout prints the commit it
 #     checks out, and with the fetch-depth: 0 the check needs (SOURCE's
 #     commit and its ancestry), every branch and tag name of EM;
-#   - a failed clone is named by a fixed line, never by git's or ssh's words;
+#   - a failed clone is named by a fixed line, never by git's or ssh's words
+#     (the causes are scripts/vendor_em.py's ACCESS_CAUSES, red, and
+#     TRANSPORT_CAUSES, a warning);
 #   - --public-log prints the vendored file names and SOURCE's commit, both
 #     already public here, and nothing learnt from the clone (not the newer
 #     commit, its date, nor an error message);
@@ -51,9 +56,11 @@ jobs:
           python-version: "3.11"
 
       - name: Clone Execution Market's main (read-only deploy key)
+        id: clone
         env:
           EM_DEPLOY_KEY: ${{ secrets.EM_DEPLOY_KEY }}
           EM_REMOTE: git@github.com:UltravioletaDAO/execution-market.git
+          LC_ALL: C # git's and ssh's messages in English: they are matched below
           # GitHub's published host key (https://api.github.com/meta): a
           # server that is not GitHub could serve a fake EM and read green.
           HOST_KEY: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
@@ -67,22 +74,46 @@ jobs:
           printf 'github.com %s\n' "$HOST_KEY" > "$RUNNER_TEMP/known_hosts"
           if ! git clone --quiet --no-checkout --single-branch --branch main --no-tags \
             --filter=blob:none \
-            --config "core.sshCommand=ssh -i '$RUNNER_TEMP/em_key' -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
+            --config "core.sshCommand=ssh -i '$RUNNER_TEMP/em_key' -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts' -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4" \
             "$EM_REMOTE" "$RUNNER_TEMP/em" 2> "$RUNNER_TEMP/clone.err"; then
             # git's and ssh's own words stay off a public log: a known cause
             # is named, anything else is reproduced with the key, not read here.
-            cause="unknown cause"
+            # An access cause is red; a transport cause is not drift.
             for known in "Permission denied (publickey)" "Repository not found" "Host key verification failed"; do
-              if grep -qF "$known" "$RUNNER_TEMP/clone.err"; then cause="$known"; fi
+              if grep -qF "$known" "$RUNNER_TEMP/clone.err"; then
+                echo "::error::The clone of Execution Market's main failed ($known), so the check did not run (docs/em-drift-check.md)"
+                exit 1
+              fi
             done
-            echo "::error::The clone of Execution Market's main failed ($cause), so the check did not run (docs/em-drift-check.md)"
+            # A server that answered (remote error:) was reached: not the network.
+            if ! grep -qF "remote error:" "$RUNNER_TEMP/clone.err"; then
+              for known in "Could not resolve hostname" "Connection timed out" "Operation timed out" "Connection refused" "Connection reset" "Connection closed" "closed by remote host" "Network is unreachable" "No route to host" "not responding" "Broken pipe" "early EOF" "the remote end hung up unexpectedly"; do
+                if grep -qF "$known" "$RUNNER_TEMP/clone.err"; then
+                  line="NETWORK — the check did not run: the clone of Execution Market's main failed ($known); not drift (docs/em-drift-check.md)"
+                  echo "::warning::$line"
+                  echo "$line" >> "$GITHUB_STEP_SUMMARY"
+                  echo "network=true" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+              done
+            fi
+            echo "::error::The clone of Execution Market's main failed (unknown cause), so the check did not run (docs/em-drift-check.md)"
             exit 1
           fi
 
       - name: Check vendor/em/ against it
+        if: steps.clone.outputs.network != 'true'
+        env:
+          LC_ALL: C # git's messages in English: vendor_em.py matches them
         run: |
           status=0
           python scripts/vendor_em.py --em-repo "$RUNNER_TEMP/em" --check --public-log > "$RUNNER_TEMP/verdict" || status=$?
           cat "$RUNNER_TEMP/verdict"
           { echo '```'; cat "$RUNNER_TEMP/verdict"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -eq 75 ]; then
+            # NETWORK (scripts/vendor_em.py, EXIT_NETWORK): git could not
+            # fetch what the check reads, and no drift was found before.
+            echo "::warning::NETWORK — the check did not finish: Execution Market could not be reached; not drift (docs/em-drift-check.md)"
+            exit 0
+          fi
           exit "$status"

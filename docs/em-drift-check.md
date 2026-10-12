@@ -7,6 +7,11 @@ Execution Market's `main`. Before it, the check ran only when someone ran it
 by hand: when EM changed its networks, enums or retry table, EM's
 `sdk-tests` job turned red and this repository stayed green.
 
+Red means someone has to act: drift, a stale pin, a missing or refused key,
+an answer from GitHub, or a failure nobody named. A network failure is not
+drift: the run stays green with a `NETWORK —` warning (below), and the next
+run checks again; a drift found before the network failed stays red.
+
 ## One-time setup (someone who administers both repositories)
 
 EM is private, and the run reads it with a **read-only deploy key**, kept in
@@ -54,6 +59,9 @@ reads it.
 | `The clone of Execution Market's main failed (Permission denied (publickey))` or `(Repository not found)` | the deploy key was removed, or EM moved | replace the key (steps 2, 3, 4) |
 | `… failed (Host key verification failed)` | GitHub's SSH host key is not the one pinned in the workflow | compare `HOST_KEY` with https://api.github.com/meta |
 | `… failed (unknown cause)` | git's own words are left out of the log | reproduce the clone with the key, off this log |
+| green, with the warning `NETWORK — the check did not run: the clone of Execution Market's main failed (<cause>)` | GitHub could not be reached (a DNS failure, no route, a timeout, a refused, reset or closed connection, the remote hanging up); the check step is skipped | nothing, unless it repeats: the next run checks again, or Run workflow |
+| green, with the warning `NETWORK — the check did not finish` (the summary names the cause, after what the check had answered) | the same, while `git show` fetched the files the check reads (`vendor_em.py` exits 75) | the same |
+| red, with `DRIFT — …` and then `NETWORK — …` in the summary | a drift was found before the network failed | the drift's row |
 
 ## What the log can say
 
@@ -66,7 +74,9 @@ therefore:
   fetches the few files the check reads). `actions/checkout` prints the commit
   it checks out and, with the `fetch-depth: 0` the check needs (SOURCE's
   commit and its ancestry), the name of every branch and tag of EM;
-- names a failed clone with a fixed line, never with git's or ssh's words;
+- names a failed clone with a fixed line, never with git's or ssh's words
+  (`vendor_em.py`'s `ACCESS_CAUSES`, red, and `TRANSPORT_CAUSES`, a
+  warning: the same two lists in the workflow and the script);
 - prints through `--public-log`: the vendored file names and SOURCE's commit,
   both already public here, and nothing it learnt from the clone (not the
   newer commit, its date, nor an error message, since a `SyntaxError` quotes
@@ -85,7 +95,12 @@ steps against a fake EM.
   else edits its `cron` line, that user; after a disable and re-enable,
   whoever re-enabled it.
 - To read the last verdict without opening the log:
-  `gh run list -R UltravioletaDAO/uvd-em-sdk-python -w em-drift.yml -L 1 --json conclusion,createdAt,url`.
+  `gh run list -R UltravioletaDAO/uvd-em-sdk-python -w em-drift.yml -L 1 --json conclusion,databaseId,createdAt`.
+  `failure` is red. `success` is a check that passed, unless
+  `gh run view <databaseId> -R UltravioletaDAO/uvd-em-sdk-python` lists a
+  `NETWORK —` warning under ANNOTATIONS: then the check did not run, or did
+  not finish. A NETWORK that repeats run after run is no blip (a runner
+  network policy, GitHub's SSH port): it needs someone, as a red would.
 - The job runs only in this repository, which it recognises by id
   (`gh api repos/UltravioletaDAO/uvd-em-sdk-python --jq .id`), so that it
   still runs after a rename.

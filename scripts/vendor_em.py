@@ -46,7 +46,10 @@ repository is public, so is its Actions log) and prints less: the vendored
 file names and SOURCE's commit, both already published here, and nothing it
 learnt from the clone — not the newer ref's commit or date, not an error
 message or a traceback (a ``SyntaxError`` quotes the line of EM it failed
-on): a failure is named by its exception class alone.
+on): a failure is named by its exception class alone. One whose cause is
+the network (``TRANSPORT_CAUSES``) is ``NETWORK`` and exits 75, EX_TEMPFAIL:
+the check did not finish, which is not drift, and the workflow warns instead
+of turning red; a drift found before it still exits 1.
 ``scripts/upstream-check.plist.template`` is the same check scheduled on a
 maintainer's machine, not installed.
 
@@ -99,6 +102,39 @@ TOKEN_KEYS = ("address", "name", "decimals")
 ESCROW_FLAGS = ("escrow", "operator")
 #: The decision table of EM's retry equivalence suite, by its names there.
 RETRY_TABLES = ("STATUS_TABLE", "EXCEPTION_TABLE", "TX_HASH_BODIES")
+
+#: git's and ssh's words for "the key, or the repository, was refused".
+#: Named, never quoted: a failed git call with one of them is an error.
+ACCESS_CAUSES = (
+    "Permission denied (publickey)",
+    "Repository not found",
+    "Host key verification failed",
+)
+#: Their words for "Execution Market could not be reached". With
+#: ``--public-log``, a git failure that says one of these (and neither
+#: ACCESS_CAUSES nor SERVER_ANSWERED, which win) is NETWORK, exit
+#: EXIT_NETWORK: the check did not finish, and that is not drift.
+#: .github/workflows/em-drift.yml names a failed clone from the same lists and
+#: rule (tests/test_vendor_em.py holds them equal).
+TRANSPORT_CAUSES = (
+    "Could not resolve hostname",
+    "Connection timed out",
+    "Operation timed out",
+    "Connection refused",
+    "Connection reset",
+    "Connection closed",
+    "closed by remote host",
+    "Network is unreachable",
+    "No route to host",
+    "not responding",
+    "Broken pipe",
+    "early EOF",
+    "the remote end hung up unexpectedly",
+)
+EXIT_NETWORK = 75  # EX_TEMPFAIL (sysexits.h): try again later
+#: git's prefix for an answer from the server, such as "not our ref" for a
+#: SOURCE commit EM no longer has: the network worked, so it is never NETWORK.
+SERVER_ANSWERED = "remote error:"
 
 SOURCE_HEADER = (
     "# Derived from Execution Market (private) at `commit`, dated `committed` (UTC):",
@@ -260,6 +296,16 @@ def parse_source(text: str) -> dict[str, str]:
     )
 
 
+class GitFailed(SystemExit):
+    """A git call failed. Its message quotes git's stderr; ``stderr`` keeps
+    that apart, so ``--public-log`` can tell a network failure without
+    printing it (in a partial clone, ``git show`` fetches what it reads)."""
+
+    def __init__(self, message: str, stderr: str) -> None:
+        super().__init__(message)
+        self.stderr = stderr
+
+
 def _git(em_repo: Path, *args: str) -> bytes:
     try:
         return subprocess.run(
@@ -269,7 +315,7 @@ def _git(em_repo: Path, *args: str) -> bytes:
         raise SystemExit("git not found on PATH: the EM clone is read with git")
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.decode("utf-8", "replace").strip()
-        raise SystemExit(f"git {' '.join(args)} failed in {em_repo}: {stderr}")
+        raise GitFailed(f"git {' '.join(args)} failed in {em_repo}: {stderr}", stderr)
 
 
 def resolve_commit(em_repo: Path, ref: str) -> str:
@@ -349,7 +395,9 @@ def contains(em_repo: Path, ancestor: str, commit: str) -> bool:
         raise SystemExit("git not found on PATH: the EM clone is read with git")
     if proc.returncode not in (0, 1):
         stderr = proc.stderr.decode("utf-8", "replace").strip()
-        raise SystemExit(f"git merge-base --is-ancestor failed in {em_repo}: {stderr}")
+        raise GitFailed(
+            f"git merge-base --is-ancestor failed in {em_repo}: {stderr}", stderr
+        )
     return proc.returncode == 0
 
 
@@ -415,15 +463,34 @@ def run_check(
     return status
 
 
+def transport_cause(exc: BaseException) -> str | None:
+    """The TRANSPORT_CAUSES entry a failed git call names, if it names one
+    and neither an ACCESS_CAUSES entry (a refused key is not the network) nor
+    SERVER_ANSWERED (a server that answered was reached)."""
+    stderr = getattr(exc, "stderr", "")
+    if not isinstance(exc, GitFailed):
+        return None
+    if SERVER_ANSWERED in stderr or any(c in stderr for c in ACCESS_CAUSES):
+        return None
+    return next((cause for cause in TRANSPORT_CAUSES if cause in stderr), None)
+
+
 def public_check(em_repo: Path, ref: str, vendor_dir: Path = VENDOR_DIR) -> int:
     """``--check --public-log``: ``run_check(public=True)``, and its lines are
     all that reaches the output. Anything else written while it runs (a
     warning about EM's code, say) is dropped, and a failure is named by its
     exception class, not its message: a ``SyntaxError`` quotes the EM line it
-    failed on, and git's stderr is not this script's to vouch for."""
+    failed on, and git's stderr is not this script's to vouch for. A git
+    failure whose cause is the network is NETWORK and EXIT_NETWORK, named by
+    its TRANSPORT_CAUSES entry: the check did not finish, which is not drift.
+    Unless it already found some: the blobs are fetched in two rounds (SOURCE's
+    commit, then the newer ref), and a DRIFT the first round found stays 1."""
     out = sys.stdout
+    found: list[str] = []
 
     def say(line: str) -> None:
+        if line.startswith(("DRIFT — ", "UPSTREAM DRIFT — ", "STALE — ")):
+            found.append(line)
         print(line, file=out, flush=True)
 
     dropped = io.StringIO()
@@ -431,6 +498,13 @@ def public_check(em_repo: Path, ref: str, vendor_dir: Path = VENDOR_DIR) -> int:
         with contextlib.redirect_stdout(dropped), contextlib.redirect_stderr(dropped):
             return run_check(em_repo, ref, say, public=True, vendor_dir=vendor_dir)
     except (Exception, SystemExit) as exc:
+        cause = transport_cause(exc)
+        if cause is not None:
+            say(
+                "NETWORK — the check did not finish: Execution Market could not be "
+                f"reached ({cause}); run it again"
+            )
+            return 1 if found else EXIT_NETWORK
         say(
             f"ERROR — the check did not finish ({type(exc).__name__}); its message "
             "is left out of a public log, it may quote Execution Market. Run it "

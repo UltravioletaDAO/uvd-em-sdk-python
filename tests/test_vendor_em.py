@@ -495,13 +495,15 @@ def sdk_tree(em_clone, tmp_path):
     return root
 
 
-def _check(root: Path, repo: Path, *extra: str) -> subprocess.CompletedProcess:
+def _check(
+    root: Path, repo: Path, *extra: str, env: dict | None = None
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(root / "scripts" / "vendor_em.py")]
         + ["--em-repo", str(repo), "--check", *extra],
         capture_output=True,
         text=True,
-        env=_no_git_env(),
+        env={**_no_git_env(), **(env or {})},
     )
 
 
@@ -768,6 +770,8 @@ PUBLIC_LINES = (
     r"ERROR — the check did not finish \([A-Za-z]+\); its message is left out of"
     r" a public log, it may quote Execution Market\. Run it on a clone: python"
     r" scripts/vendor_em\.py --em-repo <EM clone> --check",
+    r"NETWORK — the check did not finish: Execution Market could not be reached"
+    rf" \((?:{'|'.join(map(re.escape, vendor.TRANSPORT_CAUSES))})\); run it again",
 )
 
 
@@ -894,7 +898,7 @@ def test_public_log_does_not_relay_git_errors(em_clone, sdk_tree):
     assert "git rev-parse" in plain.stderr
     assert result.returncode == 1
     assert _public(result, pinned)[1].startswith(
-        "ERROR — the check did not finish (SystemExit); "
+        "ERROR — the check did not finish (GitFailed); "
     )
 
 
@@ -934,6 +938,152 @@ def test_public_log_is_only_meaningful_with_check(tmp_path):
     )
     assert result.returncode == 2
     assert "--public-log" in result.stderr
+
+
+posix = pytest.mark.skipif(
+    sys.platform == "win32", reason="a sh script stands in for ssh or git"
+)
+GITHUB_EM = "git@github.com:UltravioletaDAO/execution-market.git"
+
+
+def _fake_ssh(tmp_path: Path, *said: str) -> str:
+    """A GIT_SSH_COMMAND that never connects: it says ``said`` and a canary
+    on stderr and fails as ssh does (255). The network stays closed."""
+    script = tmp_path / "fake-ssh"
+    lines = "".join(
+        f"echo {shlex.quote(line)} >&2\n" for line in (*said, "PRIVATE_CANARY")
+    )
+    script.write_text(f"#!/bin/sh\n{lines}exit 255\n", encoding="utf-8")
+    script.chmod(0o755)
+    return str(script)
+
+
+@pytest.fixture
+def partial_clone(em_clone, tmp_path):
+    """What the weekly run reads: the fake EM's main without blobs (git show
+    fetches them), with GitHub's EM as its remote, so that fetch goes through
+    GIT_SSH_COMMAND: a test's fake ssh, never the network."""
+    repo, sha = em_clone
+    _git(repo, "branch", "-M", "main")
+    _git(repo, "config", "uploadpack.allowFilter", "true")
+    clone = tmp_path / "partial"
+    _git(
+        tmp_path,
+        "clone",
+        "-q",
+        "--no-checkout",
+        "--filter=blob:none",
+        repo.as_uri(),
+        str(clone),
+    )
+    _git(clone, "remote", "set-url", "origin", GITHUB_EM)
+    return clone, sha
+
+
+@posix
+def test_public_log_names_a_network_failure_not_drift(
+    partial_clone, sdk_tree, tmp_path
+):
+    """EM cannot be reached when git show fetches what it reads: the check
+    did not run. That is NETWORK and 75, not ERROR and 1, so the weekly run
+    warns instead of reading as drift. Plain --check is unchanged."""
+    clone, pinned = partial_clone
+    ssh = {
+        "GIT_SSH_COMMAND": _fake_ssh(
+            tmp_path, "ssh: connect to host github.com port 22: Connection timed out"
+        )
+    }
+
+    plain = _check(sdk_tree, clone, env=ssh)
+    result = _check(sdk_tree, clone, "--public-log", env=ssh)
+
+    assert plain.returncode == 1 and "Connection timed out" in plain.stderr
+    assert result.returncode == vendor.EXIT_NETWORK == 75
+    assert _public(result, pinned) == [
+        "NETWORK — the check did not finish: Execution Market could not be reached"
+        " (Connection timed out); run it again"
+    ]
+
+
+@posix
+def test_public_log_keeps_a_drift_found_before_the_network_red(
+    em_clone, sdk_tree, tmp_path
+):
+    """The blobs come in two rounds: SOURCE's commit, then origin/main. A
+    DRIFT the first round found stays red (1) when the second cannot reach
+    EM: NETWORK is not drift only while no drift was seen."""
+    repo, pinned = em_clone
+    enums = sdk_tree / "vendor" / "em" / "enums.json"
+    enums.write_bytes(enums.read_bytes() + b" ")  # vendor/em/ edited by hand
+    registry = repo / REGISTRY
+    registry.write_bytes(registry.read_bytes().replace(b'"0xA"', b'"0xA2"'))
+    _commit(repo, tmp_path, "EM's main moves: origin/main needs a new blob")
+    _git(repo, "branch", "-M", "main")
+    _git(repo, "config", "uploadpack.allowFilter", "true")
+    clone = tmp_path / "partial"
+    _git(
+        tmp_path,
+        "clone",
+        "-q",
+        "--no-checkout",
+        "--filter=blob:none",
+        repo.as_uri(),
+        str(clone),
+    )
+    for path in vendor.UPSTREAM.values():  # the first round reaches EM
+        _git(clone, "show", f"{pinned}:{path}")
+    _git(clone, "remote", "set-url", "origin", GITHUB_EM)
+    ssh = {"GIT_SSH_COMMAND": _fake_ssh(tmp_path, "send disconnect: Broken pipe")}
+
+    result = _check(sdk_tree, clone, "--public-log", env=ssh)
+
+    assert result.returncode == 1
+    lines = _public(result, pinned)
+    assert lines[0] == (
+        "DRIFT — vendor/em/ is not what SOURCE's commit yields: ['enums.json']"
+    )
+    assert lines[2] == (
+        "NETWORK — the check did not finish: Execution Market could not be reached"
+        " (Broken pipe); run it again"
+    )
+
+
+@posix
+@pytest.mark.parametrize(
+    "said",
+    [
+        # A refused key wins over the connection closing after it.
+        (
+            "git@github.com: Permission denied (publickey).",
+            "Connection closed by 192.0.2.1 port 22",
+        ),
+        # GitHub answered (a SOURCE commit EM no longer has, measured against
+        # GitHub): that is STALE's business, never NETWORK, even if git then
+        # says the remote hung up. Any answer, not only upload-pack's.
+        (
+            f"fatal: remote error: upload-pack: not our ref {'0' * 40}",
+            "fatal: the remote end hung up unexpectedly",
+        ),
+        (
+            "fatal: remote error: access denied or repository not exported",
+            "fatal: the remote end hung up unexpectedly",
+        ),
+    ],
+)
+def test_public_log_keeps_an_answer_from_github_an_error(
+    partial_clone, sdk_tree, tmp_path, said
+):
+    """Only a GitHub that could not be reached is NETWORK: a refused key, or
+    any answer from the server, is someone's to fix, and stays red."""
+    clone, pinned = partial_clone
+    ssh = {"GIT_SSH_COMMAND": _fake_ssh(tmp_path, *said)}
+
+    result = _check(sdk_tree, clone, "--public-log", env=ssh)
+
+    assert result.returncode == 1
+    assert _public(result, pinned)[0].startswith(
+        "ERROR — the check did not finish (GitFailed); "
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1016,7 +1166,7 @@ def test_nothing_of_execution_market_leaves_the_runner():
     default branch's), no artifact."""
     actions = [step for step in _drift_job()["steps"] if "uses" in step]
     ci = _yaml((WORKFLOW.parent / "ci.yml").read_text(encoding="utf-8"))
-    (ci_job,) = ci["jobs"].values()
+    ci_job = ci["jobs"]["ci"]
     assert [step["uses"] for step in actions] == [
         step["uses"] for step in ci_job["steps"] if "uses" in step
     ]
@@ -1027,6 +1177,30 @@ def test_nothing_of_execution_market_leaves_the_runner():
     assert list(_steps())[2:] == [CLONE_STEP, CHECK_STEP]
 
 
+def test_a_network_failure_skips_the_check_and_is_not_drift():
+    """The clone step names a failure from vendor_em.py's two lists, access
+    (red) then transport (a warning); a transport cause skips the check step,
+    which would only fail for want of a clone, and the check step turns
+    vendor_em.py's NETWORK exit into a warning."""
+    steps = _steps()
+    loops = [
+        shlex.split(line.strip()[len("for known in ") : -len("; do")])
+        for line in steps[CLONE_STEP]["run"].splitlines()
+        if line.strip().startswith("for known in ")
+    ]
+    assert loops == [list(vendor.ACCESS_CAUSES), list(vendor.TRANSPORT_CAUSES)]
+    assert f'if ! grep -qF "{vendor.SERVER_ANSWERED}" ' in steps[CLONE_STEP]["run"]
+    assert steps[CLONE_STEP]["env"]["EM_REMOTE"] == GITHUB_EM  # a typo: NETWORK
+    for name in (CLONE_STEP, CHECK_STEP):  # the causes are English words
+        assert steps[name]["env"]["LC_ALL"] == "C", name
+    assert steps[CLONE_STEP]["id"] == "clone"
+    assert steps[CHECK_STEP]["if"] == "steps.clone.outputs.network != 'true'"
+    assert (
+        f'if [ "$status" -eq {vendor.EXIT_NETWORK} ]; then'
+        in (steps[CHECK_STEP]["run"])
+    )
+
+
 bash_steps = pytest.mark.skipif(
     sys.platform == "win32", reason="the steps are bash, for ubuntu-latest"
 )
@@ -1035,7 +1209,8 @@ bash_steps = pytest.mark.skipif(
 def _run_step(name: str, cwd: Path, temp: Path, **env: str):
     """A step's script as the runner runs it (``bash -e``), with ``python``
     this interpreter and the step's env; what the runner fills in
-    (``${{ ... }}``) comes from ``env``."""
+    (``${{ ... }}``) comes from ``env``. The step summary and the step's
+    outputs go to ``summary.md`` and ``output`` next to ``temp``."""
     step = _steps()[name]
     script = temp.parent / f"step-{len(name)}.sh"
     script.write_text(
@@ -1050,7 +1225,14 @@ def _run_step(name: str, cwd: Path, temp: Path, **env: str):
     return subprocess.run(
         ["bash", "-e", str(script)],
         cwd=cwd,
-        env={**_no_git_env(), **step_env, "RUNNER_TEMP": str(temp), **env},
+        env={
+            **_no_git_env(),
+            **step_env,
+            "RUNNER_TEMP": str(temp),
+            "GITHUB_STEP_SUMMARY": str(temp.parent / "summary.md"),
+            "GITHUB_OUTPUT": str(temp.parent / "output"),
+            **env,
+        },
         capture_output=True,
         text=True,
     )
@@ -1101,6 +1283,7 @@ def test_the_weekly_run_clones_main_alone_quietly_and_checks_it(
     assert clone.returncode == 0, clone.stderr
     assert clone.stdout == clone.stderr == ""
     assert (temp / "clone.err").read_text(encoding="utf-8") == ""  # --quiet
+    assert not (tmp_path / "output").exists()  # the check step runs
     em = temp / "em"
     assert _git(em, "for-each-ref", "--format=%(refname)").splitlines() == [
         "refs/heads/main",
@@ -1116,6 +1299,9 @@ def test_the_weekly_run_clones_main_alone_quietly_and_checks_it(
     assert _git(em, "config", "core.sshCommand") == (
         f"ssh -i '{temp}/em_key' -o IdentitiesOnly=yes -o BatchMode=yes"
         f" -o StrictHostKeyChecking=yes -o UserKnownHostsFile='{temp}/known_hosts'"
+        # A connection that stalls is NETWORK ("not responding"), not a job
+        # killed at its timeout.
+        " -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
     )
 
     check = _run_step(CHECK_STEP, sdk_tree, temp, GITHUB_STEP_SUMMARY=str(summary))
@@ -1153,27 +1339,94 @@ def test_the_weekly_run_is_red_on_drift_and_publishes_none_of_it(
     assert "PRIVATEADDRESS" not in published and head[:7] not in published
 
 
+#: What git and OpenSSH print, and the cause each one is named by. Literal
+#: on purpose: a cause added to, or dropped from, vendor_em.py's lists (and
+#: the workflow's) changes this table too.
+_ACCESS = [
+    ("git@github.com: Permission denied (publickey).", "Permission denied (publickey)"),
+    ("ERROR: Repository not found.", "Repository not found"),
+    ("Host key verification failed.", "Host key verification failed"),
+]
+_TRANSPORT = [
+    (
+        "ssh: Could not resolve hostname github.com: Temporary failure in name"
+        " resolution",
+        "Could not resolve hostname",
+    ),
+    (
+        "ssh: connect to host github.com port 22: Connection timed out",
+        "Connection timed out",
+    ),
+    (
+        "ssh: connect to host github.com port 22: Operation timed out",
+        "Operation timed out",
+    ),
+    (
+        "ssh: connect to host github.com port 22: Connection refused",
+        "Connection refused",
+    ),
+    ("kex_exchange_identification: read: Connection reset by peer", "Connection reset"),
+    ("Connection closed by 140.82.112.3 port 22", "Connection closed"),
+    ("Connection to github.com closed by remote host.", "closed by remote host"),
+    (
+        "ssh: connect to host github.com port 22: Network is unreachable",
+        "Network is unreachable",
+    ),
+    ("ssh: connect to host github.com port 22: No route to host", "No route to host"),
+    ("Timeout, server github.com not responding.", "not responding"),
+    ("client_loop: send disconnect: Broken pipe", "Broken pipe"),
+    ("fatal: early EOF", "early EOF"),
+    (
+        "fatal: the remote end hung up unexpectedly",
+        "the remote end hung up unexpectedly",
+    ),
+]
+
+
+def test_each_cause_is_named_by_a_real_message_and_only_one():
+    assert [cause for _, cause in _ACCESS] == list(vendor.ACCESS_CAUSES)
+    assert [cause for _, cause in _TRANSPORT] == list(vendor.TRANSPORT_CAUSES)
+    causes = (*vendor.ACCESS_CAUSES, *vendor.TRANSPORT_CAUSES)
+    for said, cause in _ACCESS + _TRANSPORT:
+        assert [c for c in causes if c in said] == [cause], said
+
+
 @bash_steps
 @pytest.mark.parametrize(
-    "said, named",
-    [
+    "said, red, named",
+    [((said,), True, named) for said, named in _ACCESS]
+    + [((said,), False, cause) for said, cause in _TRANSPORT]
+    + [
+        # An access cause wins: a refused key is red even if git then says
+        # the remote hung up.
         (
-            "git@github.com: Permission denied (publickey).",
+            (_ACCESS[0][0], "fatal: the remote end hung up unexpectedly"),
+            True,
             "Permission denied (publickey)",
         ),
-        ("ERROR: Repository not found.", "Repository not found"),
-        ("Host key verification failed.", "Host key verification failed"),
-        ("fatal: early EOF", "unknown cause"),
+        # A server that answered was reached: red, whatever git adds.
+        (
+            (
+                f"fatal: remote error: upload-pack: not our ref {'0' * 40}",
+                "fatal: the remote end hung up unexpectedly",
+            ),
+            True,
+            "unknown cause",
+        ),
+        (("fatal: something else",), True, "unknown cause"),
     ],
 )
-def test_a_failed_clone_is_named_not_quoted(em_remote, tmp_path, said, named):
+def test_a_failed_clone_is_named_not_quoted(em_remote, tmp_path, said, red, named):
     """git's and ssh's words do not reach the log (a server message can carry
-    a repository name): a known cause is named, the rest is "unknown"."""
+    a repository name): a known cause is named, the rest is "unknown". An
+    access cause or an unknown one is red; a transport cause is a warning, a
+    NETWORK line in the summary and network=true, which skips the check."""
     _, _, remote, temp = em_remote
     fake = tmp_path / "bin"
     fake.mkdir()
+    lines = "".join(f"echo {shlex.quote(line)} >&2\n" for line in said)
     (fake / "git").write_text(
-        f"#!/bin/sh\necho '{said}' >&2\necho 'remote: PRIVATE_CANARY' >&2\nexit 128\n",
+        f"#!/bin/sh\n{lines}echo 'remote: PRIVATE_CANARY' >&2\nexit 128\n",
         encoding="utf-8",
     )
     (fake / "git").chmod(0o755)
@@ -1187,11 +1440,82 @@ def test_a_failed_clone_is_named_not_quoted(em_remote, tmp_path, said, named):
         PATH=f"{fake}{os.pathsep}{os.environ['PATH']}",
     )
 
-    assert result.returncode == 1
     assert result.stderr == ""
+    summary, output = tmp_path / "summary.md", tmp_path / "output"
+    if red:
+        assert result.returncode == 1
+        assert result.stdout == (
+            f"::error::The clone of Execution Market's main failed ({named}), so the"
+            " check did not run (docs/em-drift-check.md)\n"
+        )
+        assert not summary.exists() and not output.exists()
+    else:
+        line = (
+            "NETWORK — the check did not run: the clone of Execution Market's main"
+            f" failed ({named}); not drift (docs/em-drift-check.md)"
+        )
+        assert result.returncode == 0
+        assert result.stdout == f"::warning::{line}\n"
+        assert summary.read_text(encoding="utf-8") == f"{line}\n"
+        assert output.read_text(encoding="utf-8") == "network=true\n"
+
+
+@bash_steps
+def test_a_clone_that_cannot_reach_github_is_a_warning(em_remote, tmp_path):
+    """The same with git itself, against the workflow's own remote, and an
+    ssh that stands in for a network that is down (GIT_SSH_COMMAND wins over
+    the step's core.sshCommand)."""
+    _, _, _, temp = em_remote
+    ssh = _fake_ssh(
+        tmp_path, "ssh: connect to host github.com port 22: Connection timed out"
+    )
+
+    result = _run_step(
+        CLONE_STEP, SDK_ROOT, temp, EM_DEPLOY_KEY="not a key", GIT_SSH_COMMAND=ssh
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout == (
-        f"::error::The clone of Execution Market's main failed ({named}), so the"
-        " check did not run (docs/em-drift-check.md)\n"
+        "::warning::NETWORK — the check did not run: the clone of Execution"
+        " Market's main failed (Connection timed out); not drift"
+        " (docs/em-drift-check.md)\n"
+    )
+    assert "PRIVATE_CANARY" not in result.stdout + result.stderr
+    assert (tmp_path / "output").read_text(encoding="utf-8") == "network=true\n"
+
+
+@bash_steps
+def test_the_check_step_warns_when_em_cannot_be_reached_mid_check(
+    em_remote, sdk_tree, tmp_path
+):
+    """The clone worked, then git show cannot fetch what it reads: NETWORK
+    from vendor_em.py (75) becomes a warning and a green step, not drift."""
+    _, pinned, remote, temp = em_remote
+    clone = _run_step(
+        CLONE_STEP, sdk_tree, temp, EM_DEPLOY_KEY="not a key", EM_REMOTE=remote
+    )
+    assert clone.returncode == 0, clone.stderr
+    _git(temp / "em", "remote", "set-url", "origin", GITHUB_EM)
+
+    check = _run_step(
+        CHECK_STEP,
+        sdk_tree,
+        temp,
+        GIT_SSH_COMMAND=_fake_ssh(tmp_path, "Connection reset by peer"),
+    )
+
+    network = (
+        "NETWORK — the check did not finish: Execution Market could not be reached"
+        " (Connection reset); run it again"
+    )
+    assert check.returncode == 0, check.stdout + check.stderr
+    assert check.stdout == (
+        f"{network}\n::warning::NETWORK — the check did not finish: Execution"
+        " Market could not be reached; not drift (docs/em-drift-check.md)\n"
+    )
+    assert check.stderr == "" and "PRIVATE_CANARY" not in check.stdout
+    assert (tmp_path / "summary.md").read_text(encoding="utf-8") == (
+        f"```\n{network}\n```\n"
     )
 
 
