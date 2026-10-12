@@ -64,14 +64,18 @@ dependencies = [
     # minor out until this suite had run against it, and it expired faster
     # than this package could ship. 0.98.0 and 0.99.0 came out the same day
     # as 0.97.0, so the 0.9.2 ceiling excluded the latest release before
-    # anyone could publish it. From 0.97.0 to 0.99.0, everything this package
-    # imports (escrow_signing, escrow_contracts, erc7702, networks, wallet,
-    # erc8128, erc8004, exceptions) is byte-identical in the published wheels.
+    # anyone could publish it. From 0.97.0 to 0.99.0 the modules this package
+    # uses (escrow_signing, escrow_contracts, erc7702, networks, wallet,
+    # erc8128, erc8004, exceptions) are byte-identical in the published
+    # wheels. The package __init__ they load changed in 0.98.0, and so did
+    # the client, config, dx402, receipts and response modules it imports;
+    # the suite passes on 0.97.0, 0.98.0 and 0.99.0.
     # The ceiling keeps the next major out (1.0.0 and its pre-releases).
     # Trade-off: a future 0.x minor now installs without this suite having
-    # run against it. The guard is CI: the ci job resolves the newest release
-    # under this ceiling on every run, and the uvd-x402-sdk job runs the suite
-    # on each published minor from 0.95.0 to 0.99.0.
+    # run against it. Only CI runs it against a new one, and only when CI
+    # runs (pull requests and workflow_dispatch; no schedule): the ci job
+    # resolves the newest release under this ceiling, and the uvd-x402-sdk
+    # job runs the suite on each published minor from 0.95.0 to 0.99.0.
     "uvd-x402-sdk[wallet]>=0.93.0,<1.0",
 ]
 

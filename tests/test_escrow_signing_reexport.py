@@ -239,3 +239,51 @@ class TestBehaviourThatCameWithTheSDK:
             for r in caplog.records
             if r.levelno == logging.WARNING
         )
+
+    # Execution Market's escrow testnets (vendor/em/networks.json).
+    EM_TESTNETS = {"base-sepolia": 84532, "ethereum-sepolia": 11155111}
+
+    @pytest.mark.parametrize("name", sorted(EM_TESTNETS))
+    @pytest.mark.parametrize("by_chain_id", [False, True], ids=["name", "caip2"])
+    def test_6_em_testnets_are_refused_from_0_97(self, name, by_chain_id):
+        """From uvd-x402-sdk 0.97.0 nothing is signed for EM's testnets, even
+        with the addresses of the SDK's own ESCROW_CONTRACTS row. By name, the
+        refusal is the unregistered network name; as ``eip155:<id>``, it is
+        the missing rows (ESCROW_OPERATORS, ESCROW_MAX_FEE_BPS). Below 0.97.0
+        both are signed (with a warning); 0.95.0 has no ESCROW_CONTRACTS and
+        checks no address, so it gets Base's."""
+        chain_id = self.EM_TESTNETS[name]
+        network = f"eip155:{chain_id}" if by_chain_id else name
+        testnet = {
+            **BASE_NETWORK,
+            "chain_id": chain_id,
+            "usdc_domain_name": "USDC",
+            "usdc_domain_version": "2",
+        }
+        if _sdk_release() >= (0, 96, 0):
+            from uvd_x402_sdk.escrow_contracts import ESCROW_CONTRACTS
+
+            row = ESCROW_CONTRACTS[chain_id]
+            testnet.update({k: row[k] for k in ("escrow", "token_collector", "usdc")})
+        cfg = json.loads(json.dumps(PAYMENT_CONFIG))
+        cfg["escrow"]["networks"] = {network: testnet}
+        wallet = FakeWallet()
+        if _sdk_release() >= (0, 97, 0):
+            refusal = (
+                f"no escrow row for chain {chain_id}"
+                if by_chain_id
+                else f"'{name}' is not a network this SDK registers"
+            )
+            with pytest.raises(ValueError, match=refusal):
+                em_escrow.build_escrow_pre_auth(
+                    cfg, network, PAYER, WORKER, "0.10", None, wallet
+                )
+            assert wallet.typed_data_calls == []
+            return
+        header = em_escrow.build_escrow_pre_auth(
+            cfg, network, PAYER, WORKER, "0.10", None, wallet
+        )
+        assert len(wallet.typed_data_calls) == 1
+        assert json.loads(header)["paymentRequirements"]["network"] == (
+            f"eip155:{chain_id}"
+        )

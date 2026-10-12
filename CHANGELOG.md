@@ -13,15 +13,18 @@
   the next minor expired faster than this package could ship: 0.98.0 and
   0.99.0 were published the same day as 0.97.0. The ceiling now keeps the next
   major out (1.0.0 and its pre-releases) and no longer keeps each new 0.x minor
-  out until this suite has run against it. A later 0.x minor installs; CI runs
-  the suite on the newest release under the ceiling on every run, and on each
-  published minor from 0.95.0 to 0.99.0 (see Tests).
-- In the published wheels, everything this package imports from uvd-x402-sdk
+  out until this suite has run against it. A later 0.x minor installs without
+  this suite having run against it. CI runs the suite on the newest release
+  under the ceiling, and on each published minor from 0.95.0 to 0.99.0 (see
+  Tests), but only when CI runs: on pull requests and by hand, with no
+  schedule.
+- In the published wheels, the uvd-x402-sdk modules this package uses
   (`escrow_signing`, `escrow_contracts`, `erc7702`, `networks`, `wallet`,
-  `erc8128`, `erc8004`, `exceptions`) is byte-identical from 0.97.0 to 0.99.0.
-  0.98.0 and 0.99.0 change `client`, `config`, `dx402`, `receipts`,
-  `response`, the FastAPI integration and the package `__init__`, and add
-  `bounded_json` and `durable`.
+  `erc8128`, `erc8004`, `exceptions`) are byte-identical from 0.97.0 to 0.99.0.
+  The package `__init__` they load changed in 0.98.0, and so did the `client`,
+  `config`, `dx402`, `receipts` and `response` modules it imports. 0.98.0 and
+  0.99.0 also change the FastAPI integration and add `bounded_json` and
+  `durable`. The suite passes on 0.97.0, 0.98.0 and 0.99.0.
 - From 0.94.0 to 0.99.0, `wallet`, `erc8128` and `erc8004` are byte-identical
   in the published wheels. The `escrow_signing` this package re-exports signs
   the same bytes for a config its tables agree with, and refuses more before
@@ -30,6 +33,12 @@
   0.97.0 it also refuses a chain without a row in every table, an
   unregistered network name, and tier windows or an `authorizationExpiry`
   above their ceilings.
+- With uvd-x402-sdk 0.97.0 or later, nothing is signed for Execution Market's
+  escrow testnets, `base-sepolia` (84532) and `ethereum-sepolia` (11155111),
+  even with the SDK's own escrow addresses. The SDK has no rows for them in
+  `ESCROW_OPERATORS` or `ESCROW_MAX_FEE_BPS`, and does not register those
+  network names. Below 0.97.0 they are signed with a warning. This was already
+  true of 0.9.2's range, which included 0.97.0.
 
 ### Tests
 
@@ -41,6 +50,9 @@
 - `test_5_an_unverified_chain_is_signed_with_a_warning` checks the refusal
   (`ValueError`, nothing signed) when the installed SDK is 0.96.0 or later,
   and the warning below it.
+- `test_6_em_testnets_are_refused_from_0_97` signs EM's two escrow testnets
+  with the SDK's own addresses: refused with nothing signed from 0.97.0,
+  signed below it.
 
 ## [0.9.1] — 2026-10-11
 

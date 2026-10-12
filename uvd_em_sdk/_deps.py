@@ -13,8 +13,8 @@ of one missing name.
 
 Only the floor is checked at runtime. The ceiling (``<1.0``) is the
 install-time pin: it keeps the next major out. Since 0.10.0 it no longer
-keeps each next minor out (CHANGELOG 0.10.0); CI runs the suite on the
-newest release under it.
+keeps each next minor out (CHANGELOG 0.10.0). CI runs the suite on the newest
+release under it only when it runs: on pull requests and by hand.
 """
 
 from __future__ import annotations
