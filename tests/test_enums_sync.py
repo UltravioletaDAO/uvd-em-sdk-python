@@ -4,7 +4,8 @@ Same pattern as ``test_networks_sync.py``: the backend module lives in
 Execution Market (private); this repository compares against its members,
 vendored at a pinned commit in ``vendor/em/enums.json``
 (``vendor/em/SOURCE``; ``tests/test_vendor_em.py`` checks the hashes). No
-skip: it runs in a standalone checkout, CI included.
+skip: it runs in a standalone checkout, CI included, and
+``tests/test_parity_runs.py`` fails if it skips or stops catching a drift.
 """
 
 import importlib.util
