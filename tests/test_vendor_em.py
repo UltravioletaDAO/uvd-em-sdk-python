@@ -17,6 +17,7 @@ import re
 import shlex
 import subprocess
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -45,10 +46,13 @@ def _source() -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_source_names_the_repo_and_a_full_commit():
+def test_source_names_the_repo_a_full_commit_and_its_utc_date():
     fields = _source()
     assert fields["repo"] == "UltravioletaDAO/execution-market"
     assert re.fullmatch(r"[0-9a-f]{40}", fields["commit"])
+    committed = datetime.fromisoformat(fields["committed"])
+    assert committed.utcoffset() == timedelta(0)
+    assert committed.isoformat() == fields["committed"]  # one spelling, not `Z`
 
 
 def test_each_vendored_file_has_the_sha256_of_source():
@@ -91,6 +95,14 @@ def test_vendored_copy_holds_only_the_fields_the_sdk_reads():
         "EvidenceType",
         "TargetExecutorType",
     ]
+    retry = json.loads((VENDOR / "retry.json").read_text(encoding="utf-8"))
+    assert list(retry) == ["STATUS_TABLE", "EXCEPTION_TABLE", "TX_HASH_BODIES"]
+    for status, should_retry in retry["STATUS_TABLE"]:
+        assert type(status) is int and type(should_retry) is bool, status
+    for name, should_retry in retry["EXCEPTION_TABLE"]:
+        assert re.fullmatch(r"httpx\.[A-Za-z]+", name), name
+        assert type(should_retry) is bool, name
+    assert all(type(body) is dict for body in retry["TX_HASH_BODIES"])
 
 
 def _no_git_env() -> dict:
@@ -190,6 +202,33 @@ class ApplicationStatus(str, Enum):
     PENDING = "pending"
 '''
 
+FAKE_RETRY = '''"""Fake EM retry suite: parsed, never imported."""
+
+import httpx
+from execution_market._signer import with_backoff  # importing this would fail
+
+REPO_ROOT = "not a table"
+
+STATUS_TABLE = [
+    # (status, should_retry)
+    (400, False),
+    (503, True),
+]
+
+EXCEPTION_TABLE = [
+    (httpx.ConnectError, True),
+]
+
+TX_HASH_BODIES = [
+    {"transaction": {"hash": "0xabc"}},
+    {"txHash": "0xabc"},
+]
+
+
+def test_cli_status_table():
+    assert with_backoff
+'''
+
 EXPECTED_NETWORKS = {
     "base": {
         "chain_id": 8453,
@@ -221,6 +260,12 @@ EXPECTED_ENUMS = {
     "TargetExecutorType": {"HUMAN": "human", "ANY": "any"},
 }
 
+EXPECTED_RETRY = {
+    "STATUS_TABLE": [[400, False], [503, True]],
+    "EXCEPTION_TABLE": [["httpx.ConnectError", True]],
+    "TX_HASH_BODIES": [{"transaction": {"hash": "0xabc"}}, {"txHash": "0xabc"}],
+}
+
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(
@@ -235,14 +280,20 @@ def em_clone(tmp_path, monkeypatch):
     # on THIS repository instead of the throwaway one (see _no_git_env).
     for key in [k for k in os.environ if k.startswith("GIT_")]:
         monkeypatch.delenv(key)
+    # Fixed dates, the committer's after the author's and off UTC: SOURCE's
+    # `committed` is the committer date, in UTC.
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2026-01-01T00:00:00+0200")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-01-02T03:04:05+0200")
     repo = tmp_path / "em"
     registry = repo / "mcp_server" / "integrations" / "x402" / "network_registry.py"
     registry.parent.mkdir(parents=True)
     registry.write_bytes(FAKE_REGISTRY.encode("utf-8"))
     (repo / "mcp_server" / "models.py").write_bytes(FAKE_MODELS.encode("utf-8"))
+    (repo / "cli" / "tests").mkdir(parents=True)
+    (repo / "cli" / "tests" / "test_retry.py").write_bytes(FAKE_RETRY.encode("utf-8"))
     (tmp_path / "no-hooks").mkdir()
     _git(repo, "init", "-q")
-    _git(repo, "add", "mcp_server")
+    _git(repo, "add", "mcp_server", "cli")
     _git(
         repo,
         "-c",
@@ -273,6 +324,22 @@ def test_build_copies_only_the_enums_the_sdk_renders(em_clone):
     enums = json.loads(vendor.build(repo, sha)["enums.json"])
     assert enums == EXPECTED_ENUMS
     assert list(enums["TaskStatus"]) == ["PUBLISHED", "ACCEPTED"]  # backend order
+
+
+def test_build_copies_only_the_retry_decision_table(em_clone):
+    repo, sha = em_clone
+    retry = json.loads(vendor.build(repo, sha)["retry.json"])
+    assert retry == EXPECTED_RETRY
+    assert list(retry) == ["STATUS_TABLE", "EXCEPTION_TABLE", "TX_HASH_BODIES"]
+
+
+def test_source_dates_the_commit_with_its_committer_date_in_utc(em_clone):
+    """The committer date (2026-01-02T03:04:05+0200), not the author's, and in
+    UTC: git writes a UTC ``%cI`` as ``Z`` or ``+00:00`` depending on its
+    version, and --check compares SOURCE's bytes across machines."""
+    repo, sha = em_clone
+    fields = vendor.parse_source(vendor.build(repo, sha)["SOURCE"].decode())
+    assert fields["committed"] == "2026-01-02T01:04:05+00:00"
 
 
 def test_build_reads_the_commit_not_the_working_tree(em_clone):
@@ -332,6 +399,19 @@ def test_a_backend_without_an_enum_the_sdk_renders_is_refused():
     with pytest.raises(SystemExit, match="TargetExecutorType"):
         vendor.project_enums(
             {k: v for k, v in EXPECTED_ENUMS.items() if k != "TargetExecutorType"}
+        )
+
+
+def test_a_retry_suite_without_its_table_is_refused():
+    with pytest.raises(SystemExit, match="EXCEPTION_TABLE"):
+        vendor.parse_retry_tables("STATUS_TABLE = []\nTX_HASH_BODIES = []\n")
+
+
+def test_a_retry_table_that_is_not_plain_data_is_refused():
+    """A table built by code is not data: refused, not evaluated."""
+    with pytest.raises(SystemExit, match="STATUS_TABLE"):
+        vendor.parse_retry_tables(
+            "STATUS_TABLE = build()\nEXCEPTION_TABLE = []\nTX_HASH_BODIES = []\n"
         )
 
 
@@ -465,6 +545,18 @@ def test_check_flags_an_enum_member_added_upstream(em_clone, sdk_tree, tmp_path)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "enums.json" in result.stdout
     assert "networks.json" not in result.stdout
+
+
+def test_check_flags_a_retry_policy_changed_upstream(em_clone, sdk_tree, tmp_path):
+    repo, _ = em_clone
+    suite = repo / "cli" / "tests" / "test_retry.py"
+    suite.write_bytes(suite.read_bytes().replace(b"(503, True)", b"(503, False)"))
+    _fetched(repo, _commit(repo, tmp_path, "503 is no longer retried"))
+
+    result = _check(sdk_tree, repo)
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "a re-vendor would change ['retry.json']" in result.stdout
 
 
 def test_check_is_green_when_upstream_yields_the_same_bytes(

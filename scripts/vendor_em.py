@@ -1,10 +1,11 @@
 """Vendor the Execution Market data the parity tests compare the SDK against.
 
-Execution Market is a PRIVATE repository and this one is PUBLIC, so the two
-backend modules are NOT copied. This script reads them from a commit of an EM
-clone (``git show``, never the working tree), parses them with ``ast`` (never
-imported) and writes into ``vendor/em/`` only what ``scripts/sync_networks.py``
-and ``scripts/sync_enums.py`` consume:
+Execution Market is a PRIVATE repository and this one is PUBLIC, so its files
+are NOT copied. This script reads them from a commit of an EM clone
+(``git show``, never the working tree), parses them with ``ast`` (never
+imported) and writes into ``vendor/em/`` only what this repository's tests
+consume (``scripts/sync_networks.py``, ``scripts/sync_enums.py`` and
+``tests/test_retry.py``):
 
   - ``networks.json`` — from ``NETWORK_CONFIG``
     (``mcp_server/integrations/x402/network_registry.py``), per network:
@@ -14,10 +15,17 @@ and ``scripts/sync_enums.py`` consume:
     deployment addresses, internal notes...) stays in EM.
   - ``enums.json`` — the members of the enums ``sync_enums.TARGETS`` renders,
     from ``mcp_server/models.py``.
-  - ``SOURCE`` — the commit, the sha256 of each upstream module at that commit
-    and of each vendored file. ``tests/test_vendor_em.py`` checks the vendored
-    hashes on every run, CI included; only ``--check``, which needs the EM
-    clone, can confirm the commit and the upstream hashes.
+  - ``retry.json`` — the retry decision table (``RETRY_TABLES``: status ->
+    retry, exception -> retry, the tx-hash bodies never retried) from EM's
+    ``cli/tests/test_retry.py``, where EM's CI proves its two other client
+    implementations (sdk/python, the CLI) against it; exceptions by their
+    dotted name. EM's code is not copied: ``tests/test_retry.py`` holds the
+    SDK to the same table.
+  - ``SOURCE`` — the commit and its date (``committed``, UTC), the sha256 of
+    each upstream file at that commit and of each vendored file.
+    ``tests/test_vendor_em.py`` checks the vendored hashes on every run, CI
+    included; only ``--check``, which needs the EM clone, can confirm the
+    commit, its date and the upstream hashes.
 
 ``--check`` answers two questions, each on its own line, and exits 1 if
 either is no:
@@ -43,7 +51,8 @@ Usage (from the repository root, after ``git fetch`` in the EM clone)::
     python scripts/vendor_em.py --em-repo ../execution-market --check --upstream <ref>
 
 then ``python scripts/sync_networks.py && python scripts/sync_enums.py &&
-ruff format .`` to carry a change into the SDK.
+ruff format .`` to carry a change into the SDK (a change of ``retry.json`` is
+a change of the retry policy: ``tests/test_retry.py`` names it).
 """
 
 from __future__ import annotations
@@ -54,6 +63,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -70,18 +80,21 @@ DEFAULT_UPSTREAM = "origin/main"
 UPSTREAM: dict[str, str] = {
     "networks.json": "mcp_server/integrations/x402/network_registry.py",
     "enums.json": "mcp_server/models.py",
+    "retry.json": "cli/tests/test_retry.py",
 }
 
 #: The only keys copied out of NETWORK_CONFIG. ESCROW_FLAGS become booleans.
 NETWORK_KEYS = ("chain_id", "network_type", "tokens", "escrow", "operator")
 TOKEN_KEYS = ("address", "name", "decimals")
 ESCROW_FLAGS = ("escrow", "operator")
+#: The decision table of EM's retry equivalence suite, by its names there.
+RETRY_TABLES = ("STATUS_TABLE", "EXCEPTION_TABLE", "TX_HASH_BODIES")
 
 SOURCE_HEADER = (
-    "# Derived from Execution Market (private) at `commit`: NOT a copy of the two",
-    "# modules, only the fields the parity tests read (scripts/vendor_em.py says which).",
-    "# tests/test_vendor_em.py checks each vendored sha256; `<file> from` is the sha256",
-    "# of the upstream module at `commit` (python scripts/vendor_em.py --check).",
+    "# Derived from Execution Market (private) at `commit`, dated `committed` (UTC):",
+    "# NOT a copy of its files, only the fields the tests read (scripts/vendor_em.py",
+    "# says which). tests/test_vendor_em.py checks each vendored sha256; `<file> from`",
+    "# is the sha256 of the upstream file at `commit` (scripts/vendor_em.py --check).",
     "# To update: python scripts/vendor_em.py --em-repo <EM clone> [--commit <sha>],",
     "# then python scripts/sync_networks.py && python scripts/sync_enums.py && ruff format .",
 )
@@ -125,6 +138,42 @@ def parse_enums(source: str) -> dict[str, dict[str, str]]:
                 members[stmt.targets[0].id] = stmt.value.value
         enums[node.name] = members
     return enums
+
+
+def _table(node: ast.expr, name: str) -> Any:
+    """A literal, with a name (``httpx.ConnectError``) as its dotted text."""
+    if isinstance(node, (ast.Name, ast.Attribute)):
+        return ast.unparse(node)
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [_table(element, name) for element in node.elts]
+    if isinstance(node, ast.Dict) and None not in node.keys:
+        return {
+            _table(key, name): _table(value, name)
+            for key, value in zip(node.keys, node.values)
+        }
+    try:
+        return ast.literal_eval(node)
+    except ValueError:
+        raise SystemExit(f"{name} in {UPSTREAM['retry.json']} is not plain data")
+
+
+def parse_retry_tables(source: str) -> dict[str, Any]:
+    """``RETRY_TABLES`` out of EM's retry suite, without importing it (it
+    imports EM's sdk/python and CLI), in ``RETRY_TABLES`` order."""
+    tables: dict[str, Any] = {}
+    for node in ast.parse(source).body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id in RETRY_TABLES
+        ):
+            name = node.targets[0].id
+            tables[name] = _table(node.value, name)
+    missing = [name for name in RETRY_TABLES if name not in tables]
+    if missing:
+        raise SystemExit(f"{missing} not found in {UPSTREAM['retry.json']}")
+    return {name: tables[name] for name in RETRY_TABLES}
 
 
 def enum_names() -> tuple[str, ...]:
@@ -176,9 +225,17 @@ def sha256(data: bytes) -> str:
 
 
 def render_source(
-    commit: str, upstream: dict[str, bytes], vendored: dict[str, bytes]
+    commit: str,
+    committed: str,
+    upstream: dict[str, bytes],
+    vendored: dict[str, bytes],
 ) -> bytes:
-    lines = [*SOURCE_HEADER, f"repo: {REPO}", f"commit: {commit}"]
+    lines = [
+        *SOURCE_HEADER,
+        f"repo: {REPO}",
+        f"commit: {commit}",
+        f"committed: {committed}",
+    ]
     for name, path in UPSTREAM.items():
         lines.append(f"{name}: sha256={sha256(vendored[name])}")
         lines.append(f"{name} from: {path} sha256={sha256(upstream[name])}")
@@ -221,8 +278,13 @@ def build(em_repo: Path, commit: str) -> dict[str, bytes]:
     files = {
         "networks.json": render_json(project_networks(networks)),
         "enums.json": render_json(project_enums(enums)),
+        "retry.json": render_json(
+            parse_retry_tables(upstream["retry.json"].decode("utf-8"))
+        ),
     }
-    files["SOURCE"] = render_source(commit, upstream, files)
+    files["SOURCE"] = render_source(
+        commit, committed_at(em_repo, commit), upstream, files
+    )
     return files
 
 
@@ -282,8 +344,12 @@ def contains(em_repo: Path, ancestor: str, commit: str) -> bool:
 
 
 def committed_at(em_repo: Path, commit: str) -> str:
-    """The commit date, so a log shows how fresh the compared ref was."""
-    return _git(em_repo, "log", "-1", "--format=%cI", commit).decode().strip()
+    """The commit's committer date, UTC, ISO 8601 (``2026-10-12T12:35:30+00:00``):
+    SOURCE's ``committed`` and how fresh a compared ref was. From the epoch
+    (``%ct``), not ``%cI``: git writes a UTC ``%cI`` as ``Z`` or as ``+00:00``
+    depending on its version, and SOURCE's bytes must not depend on it."""
+    epoch = _git(em_repo, "log", "-1", "--format=%ct", commit).decode().strip()
+    return datetime.fromtimestamp(int(epoch), tz=timezone.utc).isoformat()
 
 
 def main() -> int:
