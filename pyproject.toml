@@ -46,17 +46,37 @@ dependencies = [
     # escrow signature is uvd_x402_sdk.escrow_signing, re-exported by
     # uvd_em_sdk.escrow_signing, and every production write is signed with
     # its wallet adapters. [wallet] brings eth-account (eth-abi, eth-utils).
-    # The floor is the release whose escrow_signing API is stable; the
-    # ceiling keeps the next minor out until this suite has run against it
-    # -- this library signs money orders, so a foreign release must not
-    # arrive on its own. uvd_em_sdk/_deps.py re-checks the floor at import;
+    # The floor is the release whose escrow_signing API is stable.
+    # uvd_em_sdk/_deps.py re-checks the floor at import;
     # tests/test_dependencies.py pins both ends here and there.
     # Ceiling <0.94 -> <0.95 (0.9.1): Execution Market pins 0.94.0 and
     # consumes this package in the same environment. 0.93.0 -> 0.94.0 leaves
     # escrow_signing, wallet and erc8128 byte-identical and
     # erc8004.supports_relayed_feedback identical by AST; the suite passes on
     # both (CHANGELOG 0.9.1).
-    "uvd-x402-sdk[wallet]>=0.93.0,<0.95",
+    # Ceiling <0.95 -> <0.98 (0.9.2): Execution Market moves to 0.97.0. From
+    # 0.94.0 to 0.97.0, wallet, erc8128 and erc8004 are byte-identical; the
+    # escrow_signing this package re-exports refuses more before signing (a
+    # config the SDK's escrow tables contradict, a chain without rows, windows
+    # above their ceilings) and signs the same bytes otherwise. The suite passes
+    # on 0.95.0, 0.96.0 and 0.97.0 (CHANGELOG 0.10.0; 0.9.2 was never released).
+    # Ceiling <0.98 -> <1.0 (0.10.0): until 0.9.2 the ceiling kept each next
+    # minor out until this suite had run against it, and it expired faster
+    # than this package could ship. 0.98.0 and 0.99.0 came out the same day
+    # as 0.97.0, so the 0.9.2 ceiling excluded the latest release before
+    # anyone could publish it. From 0.97.0 to 0.99.0 the modules this package
+    # uses (escrow_signing, escrow_contracts, erc7702, networks, wallet,
+    # erc8128, erc8004, exceptions) are byte-identical in the published
+    # wheels. The package __init__ they load changed in 0.98.0, and so did
+    # the client, config, dx402, receipts and response modules it imports;
+    # the suite passes on 0.97.0, 0.98.0 and 0.99.0.
+    # The ceiling keeps the next major out (1.0.0 and its pre-releases).
+    # Trade-off: a future 0.x minor now installs without this suite having
+    # run against it. Only CI runs it against a new one, and only when CI
+    # runs (pull requests and workflow_dispatch; no schedule): the ci job
+    # resolves the newest release under this ceiling, and the uvd-x402-sdk
+    # job runs the suite on each published minor from 0.95.0 to 0.99.0.
+    "uvd-x402-sdk[wallet]>=0.93.0,<1.0",
 ]
 
 [project.optional-dependencies]
