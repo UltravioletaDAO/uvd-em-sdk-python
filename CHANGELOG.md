@@ -1,22 +1,43 @@
 # Changelog
 
-## [0.9.2] — unreleased
+## [0.10.0] — unreleased
+
+0.9.2 (`uvd-x402-sdk<0.98`) was never released: its ceiling already excluded
+0.98.0 and 0.99.0, published the same day. Its changes are in this release.
 
 ### Changed
 
-- `uvd-x402-sdk[wallet]>=0.93.0,<0.98` (was `<0.95`): Execution Market moves
-  to 0.97.0 and consumes this package in the same environment. From 0.94.0 to
-  0.97.0, `wallet`, `erc8128` and `erc8004` are byte-identical in the
-  published wheels. The `escrow_signing` this package re-exports signs the same
-  bytes for a config its tables agree with, and refuses more before signing:
-  from 0.96.0 a config whose escrow, token collector, USDC, operator or fee
-  ceiling contradicts the SDK's escrow tables, and from 0.97.0 a chain without
-  a row in every table, an unregistered network name, and tier windows or an
-  `authorizationExpiry` above their ceilings. The suite passes on 0.95.0,
-  0.96.0 and 0.97.0.
+- `uvd-x402-sdk[wallet]>=0.93.0,<1.0` (was `<0.95` in 0.9.1). Execution Market
+  consumes this package in the same environment, and its uvd-x402-sdk pin has
+  to move to the latest release within its maximum lag of 3 days. A ceiling at
+  the next minor expired faster than this package could ship: 0.98.0 and
+  0.99.0 were published the same day as 0.97.0. The ceiling now keeps the next
+  major out (1.0.0 and its pre-releases) and no longer keeps each new 0.x minor
+  out until this suite has run against it. A later 0.x minor installs; CI runs
+  the suite on the newest release under the ceiling on every run, and on each
+  published minor from 0.95.0 to 0.99.0 (see Tests).
+- In the published wheels, everything this package imports from uvd-x402-sdk
+  (`escrow_signing`, `escrow_contracts`, `erc7702`, `networks`, `wallet`,
+  `erc8128`, `erc8004`, `exceptions`) is byte-identical from 0.97.0 to 0.99.0.
+  0.98.0 and 0.99.0 change `client`, `config`, `dx402`, `receipts`,
+  `response`, the FastAPI integration and the package `__init__`, and add
+  `bounded_json` and `durable`.
+- From 0.94.0 to 0.99.0, `wallet`, `erc8128` and `erc8004` are byte-identical
+  in the published wheels. The `escrow_signing` this package re-exports signs
+  the same bytes for a config its tables agree with, and refuses more before
+  signing. From 0.96.0 it refuses a config whose escrow, token collector,
+  USDC, operator or fee ceiling contradicts the SDK's escrow tables. From
+  0.97.0 it also refuses a chain without a row in every table, an
+  unregistered network name, and tier windows or an `authorizationExpiry`
+  above their ceilings.
 
 ### Tests
 
+- `.github/workflows/ci.yml` gains the job `uvd-x402-sdk`, which runs the
+  suite offline on each published minor from 0.95.0 to 0.99.0, one per
+  matrix leg, on Python 3.11.
+- `tests/test_dependencies.py` pins the new ceiling: 0.95.0 to 0.99.x and a
+  later 0.x minor are in, and 1.0.0 and its pre-releases are out.
 - `test_5_an_unverified_chain_is_signed_with_a_warning` checks the refusal
   (`ValueError`, nothing signed) when the installed SDK is 0.96.0 or later,
   and the warning below it.
