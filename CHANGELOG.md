@@ -1,6 +1,44 @@
 # Changelog
 
-## [Unreleased]
+## [0.10.0] — unreleased
+
+0.9.2 (`uvd-x402-sdk<0.98`) was never released: its ceiling already excluded
+0.98.0 and 0.99.0, published the same day. Its changes are in this release.
+
+### Changed
+
+- `uvd-x402-sdk[wallet]>=0.93.0,<1.0` (was `<0.95` in 0.9.1). Execution Market
+  consumes this package in the same environment, and its uvd-x402-sdk pin has
+  to move to the latest release within its maximum lag of 3 days. A ceiling at
+  the next minor expired faster than this package could ship: 0.98.0 and
+  0.99.0 were published the same day as 0.97.0. The ceiling now keeps the next
+  major out (1.0.0 and its pre-releases) and no longer keeps each new 0.x minor
+  out until this suite has run against it. A later 0.x minor installs without
+  this suite having run against it. CI runs the suite on the newest release
+  under the ceiling, and on each published minor from 0.95.0 to 0.99.0 (see
+  Tests), but only when CI runs: on pull requests and by hand, with no
+  schedule.
+- In the published wheels, the uvd-x402-sdk modules this package uses
+  (`escrow_signing`, `escrow_contracts`, `erc7702`, `networks`, `wallet`,
+  `erc8128`, `erc8004`, `exceptions`) are byte-identical from 0.97.0 to 0.99.0.
+  The package `__init__` they load changed in 0.98.0, and so did the `client`,
+  `config`, `dx402`, `receipts` and `response` modules it imports. 0.98.0 and
+  0.99.0 also change the FastAPI integration and add `bounded_json` and
+  `durable`. The suite passes on 0.97.0, 0.98.0 and 0.99.0.
+- From 0.94.0 to 0.99.0, `wallet`, `erc8128` and `erc8004` are byte-identical
+  in the published wheels. The `escrow_signing` this package re-exports signs
+  the same bytes for a config its tables agree with, and refuses more before
+  signing. From 0.96.0 it refuses a config whose escrow, token collector,
+  USDC, operator or fee ceiling contradicts the SDK's escrow tables. From
+  0.97.0 it also refuses a chain without a row in every table, an
+  unregistered network name, and tier windows or an `authorizationExpiry`
+  above their ceilings.
+- With uvd-x402-sdk 0.97.0 or later, nothing is signed for Execution Market's
+  escrow testnets, `base-sepolia` (84532) and `ethereum-sepolia` (11155111),
+  even with the SDK's own escrow addresses. The SDK has no rows for them in
+  `ESCROW_OPERATORS` or `ESCROW_MAX_FEE_BPS`, and does not register those
+  network names. Below 0.97.0 they are signed with a warning. This was already
+  true of 0.9.2's range, which included 0.97.0.
 
 ### Added
 
@@ -9,13 +47,35 @@
   both already public, and nothing learnt from the EM clone: not the newer
   ref's commit or date, not an error message or a traceback (a `SyntaxError`
   quotes the EM line it failed on). A failure is named by its exception class.
+  A git failure whose cause is the network (`TRANSPORT_CAUSES`: DNS, a
+  timeout, a reset or closed connection, the remote hanging up) is `NETWORK`
+  and exits 75, not 1: the check did not run, which is not drift. An access
+  cause (`ACCESS_CAUSES`: the key refused, the repository not found, the host
+  key) wins over it and stays an error.
 - `.github/workflows/em-drift.yml` (the repository's, not in the sdist):
   `--check --public-log` every Monday and on demand, against a fresh clone of
   EM's `main` read with a read-only deploy key (secret `EM_DEPLOY_KEY` of the
   `em-drift` environment, `main` only; every run is red until it is set). A
-  failed clone is named by a fixed line, not by git's words. The drift used to
+  failed clone is named by a fixed line, not by git's words. Red is drift, a
+  stale pin, a missing or refused key, or an unknown failure; a network
+  failure, in the clone or during the check, is a `::warning::` and a
+  `NETWORK —` line in the summary, and the run stays green. The drift used to
   surface only when someone ran `--check` by hand. Setup and how to read a
-  red: `docs/em-drift-check.md`.
+  run: `docs/em-drift-check.md`.
+
+### Tests
+
+- `.github/workflows/ci.yml` gains the job `uvd-x402-sdk`, which runs the
+  suite offline on each published minor from 0.95.0 to 0.99.0, one per
+  matrix leg, on Python 3.11.
+- `tests/test_dependencies.py` pins the new ceiling: 0.95.0 to 0.99.x and a
+  later 0.x minor are in, and 1.0.0 and its pre-releases are out.
+- `test_5_an_unverified_chain_is_signed_with_a_warning` checks the refusal
+  (`ValueError`, nothing signed) when the installed SDK is 0.96.0 or later,
+  and the warning below it.
+- `test_6_em_testnets_are_refused_from_0_97` signs EM's two escrow testnets
+  with the SDK's own addresses: refused with nothing signed from 0.97.0,
+  signed below it.
 
 ## [0.9.1] — 2026-10-11
 

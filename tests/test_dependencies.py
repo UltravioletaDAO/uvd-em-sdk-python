@@ -1,4 +1,4 @@
-"""uvd-x402-sdk is a HARD dependency, >=0.93.0,<0.95 (<0.94 in 0.9.0).
+"""uvd-x402-sdk is a HARD dependency, >=0.93.0,<1.0 (<0.94 in 0.9.0, <0.95 in 0.9.1).
 
 Until 0.8.0 it was the optional ``[wallet]`` extra, pinned ``==0.91.2``. Now
 ``uvd_em_sdk.escrow_signing`` re-exports ``uvd_x402_sdk.escrow_signing``,
@@ -8,6 +8,7 @@ and at import time (``uvd_em_sdk/_deps.py``).
 """
 
 import importlib.metadata as md
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +27,10 @@ except ModuleNotFoundError:  # pragma: no cover - py3.10 fallback
     tomllib = None
 
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
-EXPECTED = SpecifierSet(">=0.93.0,<0.95")
+CI = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml"
+EXPECTED = SpecifierSet(">=0.93.0,<1.0")
+#: The published releases the uvd-x402-sdk job of ci.yml runs the suite on.
+TESTED = ("0.95.0", "0.96.0", "0.97.0", "0.98.0", "0.99.0")
 
 
 def _x402(requirements):
@@ -42,8 +46,16 @@ def _assert_the_requirement(req):
     assert "wallet" in req.extras, str(req)  # eth-account: what signs
     assert Version("0.92.0") not in req.specifier
     assert Version("0.93.0") in req.specifier
-    assert Version("0.94.0") in req.specifier  # what Execution Market pins
-    assert Version("0.95.0") not in req.specifier
+    assert Version("0.94.0") in req.specifier
+    for tested in TESTED:
+        assert Version(tested) in req.specifier
+    assert Version("0.99.7") in req.specifier
+    # On purpose since 0.10.0: a later 0.x minor installs (CHANGELOG 0.10.0).
+    assert Version("0.100.0") in req.specifier
+    # The next major does not, nor its pre-releases.
+    assert Version("1.0.0") not in req.specifier
+    assert not req.specifier.contains("1.0.0rc1", prereleases=True)
+    assert not req.specifier.contains("1.0.0.dev0", prereleases=True)
 
 
 @pytest.mark.skipif(tomllib is None, reason="tomllib needs Python >= 3.11")
@@ -71,6 +83,14 @@ def test_the_sdk_in_this_environment_satisfies_it():
     assert Version(uvd_x402_sdk.__version__) in EXPECTED
 
 
+def test_ci_runs_the_suite_on_each_tested_release():
+    if not CI.is_file():  # pragma: no cover - the sdist leaves .github out
+        pytest.skip(".github/workflows/ci.yml is not in this tree")
+    legs = re.findall(r"^ +x402: \[(.*)\]$", CI.read_text(encoding="utf-8"), re.M)
+    assert len(legs) == 1, legs
+    assert tuple(leg.strip().strip('"') for leg in legs[0].split(",")) == TESTED
+
+
 def test_the_import_guard_states_the_same_requirement():
     _assert_the_requirement(Requirement(_deps.UVD_X402_SDK_REQUIREMENT))
     assert _deps.UVD_X402_SDK_MIN_VERSION == (0, 93, 0)
@@ -78,11 +98,13 @@ def test_the_import_guard_states_the_same_requirement():
 
 @pytest.mark.parametrize("found", ["0.91.2", "0.92.0", "0.92.99", "0.34.0", "?"])
 def test_an_older_sdk_is_refused(found):
-    with pytest.raises(ImportError, match=r"uvd-x402-sdk\[wallet\]>=0\.93\.0,<0\.95"):
+    with pytest.raises(ImportError, match=r"uvd-x402-sdk\[wallet\]>=0\.93\.0,<1\.0"):
         _deps.require_uvd_x402_sdk(found)
 
 
-@pytest.mark.parametrize("found", ["0.93.0", "0.93.7", "0.94.0", "1.0.0"])
+@pytest.mark.parametrize(
+    "found", ["0.93.0", "0.93.7", "0.94.0", "0.97.0", "0.99.0", "1.0.0"]
+)
 def test_the_floor_and_above_is_accepted(found):
     assert _deps.require_uvd_x402_sdk(found) == found
 

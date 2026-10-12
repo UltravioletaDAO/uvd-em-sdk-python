@@ -47,7 +47,7 @@ pip install uvd-em-sdk
 ```
 
 Signing is included. [`uvd-x402-sdk[wallet]`](https://pypi.org/project/uvd-x402-sdk/)
-(`>=0.93.0,<0.95`) is a dependency, not an extra: its wallet adapters sign
+(`>=0.93.0,<1.0`) is a dependency, not an extra: its wallet adapters sign
 every production write (ERC-8128), and its `uvd_x402_sdk.escrow_signing` is the
 escrow signature this package re-exports. The `[wallet]` extra of
 `em-plugin-sdk` is gone.
