@@ -40,8 +40,18 @@ either is no:
      instead of proposing to vendor an older commit.
 
 It prints file names and commits, never EM data: EM is private, and the
-output of a scheduled run ends up in a log. ``scripts/upstream-check.plist.template``
-is that scheduled run, not installed.
+output of a scheduled run ends up in a log. ``--public-log`` is for a log
+anyone can read (``.github/workflows/em-drift.yml``, the weekly run: this
+repository is public, so is its Actions log) and prints less: the vendored
+file names and SOURCE's commit, both already published here, and nothing it
+learnt from the clone — not the newer ref's commit or date, not an error
+message or a traceback (a ``SyntaxError`` quotes the line of EM it failed
+on): a failure is named by its exception class alone. One whose cause is
+the network (``TRANSPORT_CAUSES``) is ``NETWORK`` and exits 75, EX_TEMPFAIL:
+the check did not finish, which is not drift, and the workflow warns instead
+of turning red; a drift found before it still exits 1.
+``scripts/upstream-check.plist.template`` is the same check scheduled on a
+maintainer's machine, not installed.
 
 Usage (from the repository root, after ``git fetch`` in the EM clone)::
 
@@ -49,6 +59,7 @@ Usage (from the repository root, after ``git fetch`` in the EM clone)::
     python scripts/vendor_em.py --em-repo ../execution-market --commit <sha>
     python scripts/vendor_em.py --em-repo ../execution-market --check       # exit 1 if vendor/em/ is not SOURCE's commit, or origin/main moved past it
     python scripts/vendor_em.py --em-repo ../execution-market --check --upstream <ref>
+    python scripts/vendor_em.py --em-repo ../execution-market --check --public-log  # for a public log
 
 then ``python scripts/sync_networks.py && python scripts/sync_enums.py &&
 ruff format .`` to carry a change into the SDK (a change of ``retry.json`` is
@@ -59,13 +70,15 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import hashlib
+import io
 import json
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SDK_ROOT = SCRIPT_DIR.parent
@@ -89,6 +102,39 @@ TOKEN_KEYS = ("address", "name", "decimals")
 ESCROW_FLAGS = ("escrow", "operator")
 #: The decision table of EM's retry equivalence suite, by its names there.
 RETRY_TABLES = ("STATUS_TABLE", "EXCEPTION_TABLE", "TX_HASH_BODIES")
+
+#: git's and ssh's words for "the key, or the repository, was refused".
+#: Named, never quoted: a failed git call with one of them is an error.
+ACCESS_CAUSES = (
+    "Permission denied (publickey)",
+    "Repository not found",
+    "Host key verification failed",
+)
+#: Their words for "Execution Market could not be reached". With
+#: ``--public-log``, a git failure that says one of these (and neither
+#: ACCESS_CAUSES nor SERVER_ANSWERED, which win) is NETWORK, exit
+#: EXIT_NETWORK: the check did not finish, and that is not drift.
+#: .github/workflows/em-drift.yml names a failed clone from the same lists and
+#: rule (tests/test_vendor_em.py holds them equal).
+TRANSPORT_CAUSES = (
+    "Could not resolve hostname",
+    "Connection timed out",
+    "Operation timed out",
+    "Connection refused",
+    "Connection reset",
+    "Connection closed",
+    "closed by remote host",
+    "Network is unreachable",
+    "No route to host",
+    "not responding",
+    "Broken pipe",
+    "early EOF",
+    "the remote end hung up unexpectedly",
+)
+EXIT_NETWORK = 75  # EX_TEMPFAIL (sysexits.h): try again later
+#: git's prefix for an answer from the server, such as "not our ref" for a
+#: SOURCE commit EM no longer has: the network worked, so it is never NETWORK.
+SERVER_ANSWERED = "remote error:"
 
 SOURCE_HEADER = (
     "# Derived from Execution Market (private) at `commit`, dated `committed` (UTC):",
@@ -250,6 +296,16 @@ def parse_source(text: str) -> dict[str, str]:
     )
 
 
+class GitFailed(SystemExit):
+    """A git call failed. Its message quotes git's stderr; ``stderr`` keeps
+    that apart, so ``--public-log`` can tell a network failure without
+    printing it (in a partial clone, ``git show`` fetches what it reads)."""
+
+    def __init__(self, message: str, stderr: str) -> None:
+        super().__init__(message)
+        self.stderr = stderr
+
+
 def _git(em_repo: Path, *args: str) -> bytes:
     try:
         return subprocess.run(
@@ -259,7 +315,7 @@ def _git(em_repo: Path, *args: str) -> bytes:
         raise SystemExit("git not found on PATH: the EM clone is read with git")
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.decode("utf-8", "replace").strip()
-        raise SystemExit(f"git {' '.join(args)} failed in {em_repo}: {stderr}")
+        raise GitFailed(f"git {' '.join(args)} failed in {em_repo}: {stderr}", stderr)
 
 
 def resolve_commit(em_repo: Path, ref: str) -> str:
@@ -339,7 +395,9 @@ def contains(em_repo: Path, ancestor: str, commit: str) -> bool:
         raise SystemExit("git not found on PATH: the EM clone is read with git")
     if proc.returncode not in (0, 1):
         stderr = proc.stderr.decode("utf-8", "replace").strip()
-        raise SystemExit(f"git merge-base --is-ancestor failed in {em_repo}: {stderr}")
+        raise GitFailed(
+            f"git merge-base --is-ancestor failed in {em_repo}: {stderr}", stderr
+        )
     return proc.returncode == 0
 
 
@@ -350,6 +408,109 @@ def committed_at(em_repo: Path, commit: str) -> str:
     depending on its version, and SOURCE's bytes must not depend on it."""
     epoch = _git(em_repo, "log", "-1", "--format=%ct", commit).decode().strip()
     return datetime.fromtimestamp(int(epoch), tz=timezone.utc).isoformat()
+
+
+def run_check(
+    em_repo: Path,
+    ref: str,
+    say: Callable[[str], None],
+    public: bool = False,
+    vendor_dir: Path = VENDOR_DIR,
+) -> int:
+    """``--check``: both questions, a line each (and a ``Fix:`` line under a
+    no) through ``say``; 0 is two yeses. ``public`` leaves out what only the
+    clone knows (``ref``'s commit and date) and the clone's path."""
+    pinned = parse_source((vendor_dir / "SOURCE").read_text(encoding="utf-8"))
+    clone = "<EM clone>" if public else em_repo
+    status = 0
+    drifted = check(em_repo, vendor_dir)
+    if drifted:
+        say(f"DRIFT — vendor/em/ is not what SOURCE's commit yields: {drifted}")
+        say(
+            f"Fix: python scripts/vendor_em.py --em-repo {clone} "
+            f"--commit {pinned['commit']} (same pin), "
+            "or --commit <newer sha> to move it"
+        )
+        status = 1
+    else:
+        say(
+            f"OK — vendor/em/ is exactly what SOURCE's commit "
+            f"({pinned['commit'][:12]}) yields"
+        )
+
+    head = resolve_commit(em_repo, ref)
+    seen = ref
+    if not public:
+        seen = f"{ref} = {head[:12]}, committed {committed_at(em_repo, head)}"
+    if not contains(em_repo, pinned["commit"], head):
+        say(
+            f"STALE — {seen} does not contain SOURCE's commit "
+            f"({pinned['commit'][:12]}): fetch the EM clone and run again"
+        )
+        return 1
+    _, ahead = check_upstream(em_repo, head, vendor_dir)
+    if ahead:
+        say(f"UPSTREAM DRIFT — {seen}: a re-vendor would change {ahead}")
+        commit = "<the sha --check names on a clone>" if public else head
+        say(
+            f"Fix: python scripts/vendor_em.py --em-repo {clone} --commit {commit}, "
+            "then python scripts/sync_networks.py && python scripts/sync_enums.py "
+            "&& ruff format . (the parity tests name what the SDK must follow)"
+        )
+        status = 1
+    else:
+        say(f"OK — {seen}: same vendored bytes, nothing to re-vendor")
+    return status
+
+
+def transport_cause(exc: BaseException) -> str | None:
+    """The TRANSPORT_CAUSES entry a failed git call names, if it names one
+    and neither an ACCESS_CAUSES entry (a refused key is not the network) nor
+    SERVER_ANSWERED (a server that answered was reached)."""
+    stderr = getattr(exc, "stderr", "")
+    if not isinstance(exc, GitFailed):
+        return None
+    if SERVER_ANSWERED in stderr or any(c in stderr for c in ACCESS_CAUSES):
+        return None
+    return next((cause for cause in TRANSPORT_CAUSES if cause in stderr), None)
+
+
+def public_check(em_repo: Path, ref: str, vendor_dir: Path = VENDOR_DIR) -> int:
+    """``--check --public-log``: ``run_check(public=True)``, and its lines are
+    all that reaches the output. Anything else written while it runs (a
+    warning about EM's code, say) is dropped, and a failure is named by its
+    exception class, not its message: a ``SyntaxError`` quotes the EM line it
+    failed on, and git's stderr is not this script's to vouch for. A git
+    failure whose cause is the network is NETWORK and EXIT_NETWORK, named by
+    its TRANSPORT_CAUSES entry: the check did not finish, which is not drift.
+    Unless it already found some: the blobs are fetched in two rounds (SOURCE's
+    commit, then the newer ref), and a DRIFT the first round found stays 1."""
+    out = sys.stdout
+    found: list[str] = []
+
+    def say(line: str) -> None:
+        if line.startswith(("DRIFT — ", "UPSTREAM DRIFT — ", "STALE — ")):
+            found.append(line)
+        print(line, file=out, flush=True)
+
+    dropped = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(dropped), contextlib.redirect_stderr(dropped):
+            return run_check(em_repo, ref, say, public=True, vendor_dir=vendor_dir)
+    except (Exception, SystemExit) as exc:
+        cause = transport_cause(exc)
+        if cause is not None:
+            say(
+                "NETWORK — the check did not finish: Execution Market could not be "
+                f"reached ({cause}); run it again"
+            )
+            return 1 if found else EXIT_NETWORK
+        say(
+            f"ERROR — the check did not finish ({type(exc).__name__}); its message "
+            "is left out of a public log, it may quote Execution Market. Run it "
+            "on a clone: python scripts/vendor_em.py --em-repo <EM clone> --check"
+        )
+        return 1
 
 
 def main() -> int:
@@ -371,50 +532,23 @@ def main() -> int:
         help=f"with --check: the newer EM ref to compare (default {DEFAULT_UPSTREAM}"
         "; fetch the clone first)",
     )
+    parser.add_argument(
+        "--public-log",
+        action="store_true",
+        help="with --check: print only what is already public (vendored file "
+        "names, SOURCE's commit), for a log anyone can read",
+    )
     args = parser.parse_args()
     if args.upstream is not None and not args.check:
         parser.error("--upstream is only meaningful with --check")
+    if args.public_log and not args.check:
+        parser.error("--public-log is only meaningful with --check")
 
     if args.check:
-        pinned = parse_source((VENDOR_DIR / "SOURCE").read_text(encoding="utf-8"))
-        status = 0
-        drifted = check(args.em_repo)
-        if drifted:
-            print(f"DRIFT — vendor/em/ is not what SOURCE's commit yields: {drifted}")
-            print(
-                "Fix: python scripts/vendor_em.py --em-repo "
-                f"{args.em_repo} --commit {pinned['commit']} (same pin), "
-                "or --commit <newer sha> to move it"
-            )
-            status = 1
-        else:
-            print(
-                f"OK — vendor/em/ is exactly what SOURCE's commit "
-                f"({pinned['commit'][:12]}) yields"
-            )
-
         ref = args.upstream or DEFAULT_UPSTREAM
-        head = resolve_commit(args.em_repo, ref)
-        seen = f"{ref} = {head[:12]}, committed {committed_at(args.em_repo, head)}"
-        if not contains(args.em_repo, pinned["commit"], head):
-            print(
-                f"STALE — {seen} does not contain SOURCE's commit "
-                f"({pinned['commit'][:12]}): fetch the EM clone and run again"
-            )
-            return 1
-        _, ahead = check_upstream(args.em_repo, head)
-        if ahead:
-            print(f"UPSTREAM DRIFT — {seen}: a re-vendor would change {ahead}")
-            print(
-                "Fix: python scripts/vendor_em.py --em-repo "
-                f"{args.em_repo} --commit {head}, then python "
-                "scripts/sync_networks.py && python scripts/sync_enums.py && "
-                "ruff format . (the parity tests name what the SDK must follow)"
-            )
-            status = 1
-        else:
-            print(f"OK — {seen}: same vendored bytes, nothing to re-vendor")
-        return status
+        if args.public_log:
+            return public_check(args.em_repo, ref)
+        return run_check(args.em_repo, ref, print)
 
     commit = resolve_commit(args.em_repo, args.commit or "origin/main")
     VENDOR_DIR.mkdir(parents=True, exist_ok=True)

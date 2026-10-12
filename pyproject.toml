@@ -91,6 +91,9 @@ dev = [
     "pytest-asyncio>=0.23",
     "respx>=0.21",
     "websockets>=12.0",
+    # tests/test_vendor_em.py reads .github/workflows/em-drift.yml: its
+    # triggers, permissions and the scripts of its steps, which it runs.
+    "pyyaml>=6.0",
     # Pinned like the backend job: an open range let 0.16.0 in (2026-07-23)
     # and its formatter reflows code no one touched, so CI fails on unrelated
     # PRs. Bumping the pin requires reformatting the package in the same PR.

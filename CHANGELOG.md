@@ -40,6 +40,32 @@
   network names. Below 0.97.0 they are signed with a warning. This was already
   true of 0.9.2's range, which included 0.97.0.
 
+### Added
+
+- `scripts/vendor_em.py --check --public-log`: the same two answers, for a
+  log anyone can read. It prints the vendored file names and SOURCE's commit,
+  both already public, and nothing learnt from the EM clone: not the newer
+  ref's commit or date, not an error message or a traceback (a `SyntaxError`
+  quotes the EM line it failed on). A failure is named by its exception class.
+  A git failure whose cause is the network (`TRANSPORT_CAUSES`: DNS, no
+  route, a timeout, a reset or closed connection, the remote hanging up) is
+  `NETWORK` and exits 75, not 1: the check did not finish, which is not drift
+  (a drift found before it still exits 1). An access cause (`ACCESS_CAUSES`:
+  the key refused, the repository not found, the host key) wins over it and
+  stays an error, and so does any answer from the server (`remote error:`,
+  such as "not our ref" for a SOURCE commit EM no longer has).
+- `.github/workflows/em-drift.yml` (the repository's, not in the sdist):
+  `--check --public-log` every Monday and on demand, against a fresh clone of
+  EM's `main` read with a read-only deploy key (secret `EM_DEPLOY_KEY` of the
+  `em-drift` environment, `main` only; every run is red until it is set). A
+  failed clone is named by a fixed line, not by git's words. Red is drift, a
+  stale pin, a missing or refused key, an answer from GitHub, or an unknown
+  failure; a network failure, in the clone or during the check, is a
+  `::warning::` and a `NETWORK —` line in the summary, and the run stays green
+  unless a drift was found before it. The drift used to
+  surface only when someone ran `--check` by hand. Setup and how to read a
+  run: `docs/em-drift-check.md`.
+
 ### Tests
 
 - `.github/workflows/ci.yml` gains the job `uvd-x402-sdk`, which runs the
