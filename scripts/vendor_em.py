@@ -25,8 +25,8 @@ and generators consume (``scripts/sync_networks.py``,
   - ``feedback-delegate.json`` — from EM's FeedbackDelegate deployment record
     (``contracts/deployments/feedback-delegate.json``), its ``deployments``
     and only these fields: per network, ``chain_id`` and ``address`` (the v4
-    delegate). Every other key (notes, deploy transactions, superseded
-    addresses, test vectors...) stays in EM. A record of another version
+    delegate). Every other key, of the record and of each row, stays in EM.
+    A record of another version
     than ``DELEGATE_VERSION`` is refused, not vendored: this table is what
     the SDK lets an EIP-7702 authorization point at
     (``uvd_em_sdk.feedback_delegate``), and a new delegate version is a

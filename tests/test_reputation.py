@@ -487,32 +487,65 @@ PREPARED = {
 }
 
 #: The v4 FeedbackDelegate on Base, written here by hand on purpose: the
-#: parity test holds the table to the vendored record, this one holds it to
-#: the contract the record's v4 test vector names on Base.
+#: parity test holds the table to the vendored copy, and a change of this
+#: address has to show up in a review of this file too.
 BASE_V4 = "0x260D3D0258680aA458D0EBB8BcAE8A2f68bf6163"
+
+#: A throwaway key for the tests' rater: never funded, signs nothing real.
+RATER_KEY = bytes.fromhex(
+    "74057a8c1b82f5a9322eb37cacaba9d90687f106a8f323bf0a1cfe561f857fd8"
+)
+RATER = "0x9D3d65532e29f64210C0E0B66118a35828fF39B0"
 
 #: A first rating on Base: the account is not delegated there yet.
 FIRST_RATING = {
     **PREPARED,
+    "rater_wallet": RATER,
     "delegated": False,
     "delegate": BASE_V4,
     "chain_id": 8453,
     "account_nonce": 7,
     "delegation_notice": (
-        "Sending this rating also delegates your account "
-        f"{PREPARED['rater_wallet']} (EIP-7702) on base (chain 8453) to the "
-        f"FeedbackDelegate contract {BASE_V4}"
+        f"Sending this rating also delegates your account {RATER} (EIP-7702) "
+        f"on base (chain 8453) to the FeedbackDelegate contract {BASE_V4}"
     ),
 }
 
+#: RATER's EIP-7702 authorization of (8453, BASE_V4, 7), as eth-account's
+#: ``Account.sign_authorization`` produced it (0.14.0): a known answer from
+#: an implementation that is not the SDK's.
 AUTH = {
     "chainId": 8453,
     "address": BASE_V4,
     "nonce": 7,
     "yParity": 1,
-    "r": "0x" + "aa" * 32,
-    "s": "0x" + "bb" * 32,
+    "r": "0x70a9d76dda57ce50bf602c84bfdc7f79cb4ef7bf841864c16560afb9427e6348",
+    "s": "0x1053d60958ac54768a0c47da591be856b1f7c24a3953e3f0785dcc5ae805c336",
 }
+
+
+def _signed(chain_id, address, nonce=7, key=RATER_KEY, **fields):
+    """An EIP-7702 authorization of ``(chain_id, address, nonce)`` signed with
+    ``key``; ``fields`` overwrite what the dict SAYS, not what was signed.
+    ``test_the_helper_signs_what_eth_account_signs`` ties it to AUTH."""
+    import rlp
+    from eth_keys import keys
+    from eth_utils import keccak
+
+    digest = keccak(
+        bytes([5]) + rlp.encode([chain_id, bytes.fromhex(address[2:]), nonce])
+    )
+    signature = keys.PrivateKey(key).sign_msg_hash(digest)
+    return {
+        "chainId": chain_id,
+        "address": address,
+        "nonce": nonce,
+        "yParity": signature.v,
+        "r": hex(signature.r),
+        "s": hex(signature.s),
+        **fields,
+    }
+
 
 SIG = "0x" + "22" * 65
 
@@ -536,6 +569,9 @@ ECHOED = {
     "feedback_uri": "https://execution.market/feedback/x.json",
     "feedback_hash": "0x" + "ef" * 32,
 }
+
+#: The same body for FIRST_RATING, whose rater is RATER.
+ECHOED_FIRST = {**ECHOED, "rater_wallet": RATER}
 
 FOREIGN = "0x" + "66" * 20
 
@@ -686,7 +722,7 @@ class TestRelayedRatingDelegation:
         await _submit(client, authorization=AUTH, delegation_acknowledged=True)
 
         assert json.loads(route.calls.last.request.content) == {
-            **ECHOED,
+            **ECHOED_FIRST,
             "authorization": AUTH,
             "delegation_acknowledged": True,
         }
@@ -701,21 +737,23 @@ class TestRelayedRatingDelegation:
         await _submit(client, authorization=AUTH)
 
         assert json.loads(route.calls.last.request.content) == {
-            **ECHOED,
+            **ECHOED_FIRST,
             "authorization": AUTH,
         }
 
     @pytest.mark.parametrize(
-        "prepared", [PREPARED, FIRST_RATING], ids=["delegated", "first"]
+        "prepared, sent",
+        [(PREPARED, ECHOED), (FIRST_RATING, ECHOED_FIRST)],
+        ids=["delegated", "first"],
     )
     async def test_delegation_acknowledged_never_travels_without_an_authorization(
-        self, mock_router, client, prepared
+        self, mock_router, client, prepared, sent
     ):
         route = _submit_route(mock_router)
 
         await _submit(client, prepared, delegation_acknowledged=True)
 
-        assert json.loads(route.calls.last.request.content) == ECHOED
+        assert json.loads(route.calls.last.request.content) == sent
 
     @pytest.mark.parametrize("said", [1, "true", "yes", [True]])
     async def test_only_true_itself_acknowledges(self, mock_router, client, said):
@@ -820,7 +858,7 @@ class TestRelayedRatingDelegation:
             "chain_id": 1,
             "delegate": ethereum.address,
         }
-        auth = {**AUTH, "chainId": 1, "address": ethereum.address}
+        auth = _signed(1, ethereum.address)
 
         with pytest.raises(EMDelegateNotPinnedError) as exc:
             await _submit(client, {**prepared, "chain_id": True}, authorization=auth)
@@ -1006,14 +1044,18 @@ class TestVerifyFeedbackDelegate:
         from uvd_em_sdk import verify_feedback_delegate
 
         d = FEEDBACK_DELEGATES_BY_NAME()[network]
-        prepared = {"network": network, "chain_id": d.chain_id, "delegate": d.address}
-        auth = {**AUTH, "chainId": d.chain_id, "address": d.address}
+        prepared = {
+            "network": network,
+            "chain_id": d.chain_id,
+            "delegate": d.address,
+            "rater_wallet": RATER,
+        }
 
-        assert verify_feedback_delegate(prepared, auth) == d
+        assert verify_feedback_delegate(prepared, _signed(d.chain_id, d.address)) == d
 
     def test_the_comparison_is_by_chain_and_address(self):
-        """Optimism and Monad share an address (same deployer, same nonce):
-        it verifies on both. Base's address does not verify on Optimism."""
+        """Optimism and Monad pin the same address: it verifies on both.
+        Base's address does not verify on Optimism."""
         from uvd_em_sdk import EMDelegateNotPinnedError, verify_feedback_delegate
 
         table = FEEDBACK_DELEGATES_BY_NAME()
@@ -1057,3 +1099,179 @@ class TestVerifyFeedbackDelegate:
             "pinned_delegate": BASE_V4,
         }
         assert BASE_V4 in exc.value.message and FOREIGN in exc.value.message
+
+
+class TestAuthorizationSigner:
+    """The dict says chainId, address and nonce; the signature says what was
+    signed. A wallet that signed chainId 0 under a dict that says 8453 would
+    hand whoever reads the body a delegation valid on every chain."""
+
+    @pytest.fixture
+    def mock_router(self):
+        with respx.mock(base_url=BASE, assert_all_called=False) as router:
+            yield router
+
+    def test_the_known_answer_recovers_to_the_rater(self):
+        from uvd_em_sdk import verify_feedback_delegate
+
+        assert verify_feedback_delegate(FIRST_RATING, AUTH).address == BASE_V4
+
+    def test_the_helper_signs_what_eth_account_signs(self):
+        """``_signed`` builds the EIP-7702 preimage the same way the SDK does;
+        AUTH comes from eth-account. Same key, same tuple: same signature."""
+        signed = _signed(8453, BASE_V4, 7)
+        for field in ("yParity", "r", "s"):
+            assert int(str(signed[field]), 0) == int(str(AUTH[field]), 0), field
+
+    @pytest.mark.parametrize(
+        "auth",
+        [
+            # The refuter's case: the wallet signed chainId 0 (every chain),
+            # and the dict says this chain.
+            pytest.param(_signed(0, BASE_V4, chainId=8453), id="signed-for-chain-0"),
+            pytest.param(_signed(1, BASE_V4, chainId=8453), id="signed-for-chain-1"),
+            pytest.param(
+                {**_signed(8453, FOREIGN), "address": BASE_V4}, id="signed-foreign"
+            ),
+            pytest.param({**_signed(8453, BASE_V4, nonce=8), "nonce": 7}, id="nonce"),
+            pytest.param(
+                _signed(8453, BASE_V4, key=bytes.fromhex("22" * 32)), id="another-key"
+            ),
+            pytest.param({**AUTH, "yParity": 1 - AUTH["yParity"]}, id="flipped-parity"),
+            pytest.param({**AUTH, "yParity": 2}, id="parity-2"),
+            pytest.param({**AUTH, "yParity": True}, id="parity-bool"),
+            pytest.param({**AUTH, "r": "nope"}, id="r-not-hex"),
+            pytest.param({**AUTH, "s": None}, id="s-none"),
+            pytest.param({**AUTH, "r": "0x0"}, id="r-zero"),
+            pytest.param({**AUTH, "s": "0x" + "ff" * 32}, id="s-out-of-range"),
+            pytest.param({**AUTH, "nonce": -1}, id="nonce-negative"),
+            pytest.param({**AUTH, "nonce": 2**64}, id="nonce-over-uint64"),
+            pytest.param({**AUTH, "nonce": "7"}, id="nonce-decimal-string"),
+            pytest.param(
+                {k: v for k, v in AUTH.items() if k not in ("r", "s")}, id="unsigned"
+            ),
+        ],
+    )
+    async def test_an_authorization_the_rater_did_not_sign_sends_nothing(
+        self, mock_router, client, auth
+    ):
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        route = _submit_route(mock_router)
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, authorization=auth, delegation_acknowledged=True)
+
+        assert exc.value.code == "authorization_wrong_signer"
+        assert not route.called
+
+    @pytest.mark.parametrize(
+        "rater", [None, FOREIGN, RATER[2:], "0X" + RATER[2:]], ids=str
+    )
+    def test_the_signer_must_be_the_prepared_rater(self, rater):
+        from uvd_em_sdk import EMDelegateNotPinnedError, verify_feedback_delegate
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            verify_feedback_delegate({**FIRST_RATING, "rater_wallet": rater}, AUTH)
+
+        assert exc.value.code == "authorization_wrong_signer"
+
+    def test_the_rater_is_compared_without_case(self):
+        from uvd_em_sdk import verify_feedback_delegate
+
+        for rater in (RATER.lower(), "0x" + RATER[2:].upper()):
+            assert verify_feedback_delegate(
+                {**FIRST_RATING, "rater_wallet": rater}, AUTH
+            )
+
+    def test_hex_and_int_spellings_of_the_signature_verify(self):
+        from uvd_em_sdk import verify_feedback_delegate
+
+        as_ints = {**AUTH, "r": int(AUTH["r"], 16), "s": int(AUTH["s"], 16)}
+        as_hex_parity = {**AUTH, "yParity": hex(AUTH["yParity"])}
+        assert verify_feedback_delegate(FIRST_RATING, as_ints)
+        assert verify_feedback_delegate(FIRST_RATING, as_hex_parity)
+
+    async def test_snake_case_keys_are_read_as_execution_market_reads_them(
+        self, mock_router, client
+    ):
+        """EM's model takes ``chain_id`` and ``y_parity`` too (populate_by_name),
+        and so does what ``model_dump()`` of it writes. 0.10.0 sent such a dict
+        and EM accepted it: it is checked, not refused for its key names."""
+        route = _submit_route(mock_router)
+        snake = {
+            "chain_id": AUTH["chainId"],
+            "address": AUTH["address"],
+            "nonce": AUTH["nonce"],
+            "y_parity": AUTH["yParity"],
+            "r": AUTH["r"],
+            "s": AUTH["s"],
+        }
+
+        await _submit(client, authorization=snake, delegation_acknowledged=True)
+
+        assert json.loads(route.calls.last.request.content)["authorization"] == snake
+
+    async def test_camel_case_wins_over_snake_case(self, mock_router, client):
+        """Both present: EM reads ``chainId``, and so does the check."""
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        route = _submit_route(mock_router)
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(
+                client, authorization={**AUTH, "chainId": 0, "chain_id": 8453}
+            )
+
+        assert exc.value.code == "authorization_wrong_chain"
+        assert not route.called
+        await _submit(client, authorization={**AUTH, "chain_id": 0})  # chainId: 8453
+        assert route.called
+
+    async def test_what_is_checked_is_what_is_sent(self, mock_router, client):
+        """A mapping whose ``get`` disagrees with what JSON writes of it is
+        checked, and sent, as JSON writes it."""
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        class Lying(dict):
+            def get(self, key, default=None):
+                return AUTH.get(key, default)
+
+        route = _submit_route(mock_router)
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, authorization=Lying({**AUTH, "chainId": 0}))
+
+        assert exc.value.code == "authorization_wrong_chain"
+        assert not route.called
+
+    async def test_a_read_only_mapping_is_sent_as_a_plain_object(
+        self, mock_router, client
+    ):
+        from types import MappingProxyType
+
+        route = _submit_route(mock_router)
+
+        await _submit(client, authorization=MappingProxyType(dict(AUTH)))
+
+        assert json.loads(route.calls.last.request.content)["authorization"] == AUTH
+
+    async def test_a_value_json_cannot_carry_sends_nothing(self, mock_router, client):
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        route = _submit_route(mock_router)
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, authorization={**AUTH, "extra": object()})
+
+        assert exc.value.code == "authorization_invalid"
+        assert not route.called
+
+    @pytest.mark.parametrize("prepared", [None, [], "prepared"], ids=str)
+    def test_a_prepared_that_is_not_a_mapping_is_refused_typed(self, prepared):
+        from uvd_em_sdk import EMDelegateNotPinnedError, verify_feedback_delegate
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            verify_feedback_delegate(prepared, AUTH)
+
+        assert exc.value.code == "prepared_invalid"

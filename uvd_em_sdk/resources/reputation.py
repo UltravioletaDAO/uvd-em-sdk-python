@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
-from ..feedback_delegate import verify_feedback_delegate
+from ..feedback_delegate import _checked_authorization
 from ..models import (
     AgentIdentity,
     AgentReputation,
@@ -328,10 +328,13 @@ class ReputationResource:
         ``delegate`` and ``chain_id`` against the FeedbackDelegate table this
         SDK ships (``uvd_em_sdk.feedback_delegate.FEEDBACK_DELEGATES``) and
         refuses chainId 0; sign over the ``chain_id`` and ``address`` it
-        returns. Then show the account's owner ``delegation_notice`` — which
-        contract, which chain, and that the account stays delegated after the
-        rating — and sign only if they accept (see :meth:`submit_relayed_rating`,
-        ``delegation_acknowledged``).
+        returns, with ``account_nonce``, using the rater's own key. Then show
+        the account's owner ``delegation_notice`` — which contract, which
+        chain, and that the account stays delegated after the rating (a
+        backend that predates the field does not send it: say the same from
+        what :func:`~uvd_em_sdk.feedback_delegate.verify_feedback_delegate`
+        returns) — and sign only if they accept (see
+        :meth:`submit_relayed_rating`, ``delegation_acknowledged``).
         """
         body: dict[str, Any] = {
             "task_id": task_id,
@@ -369,19 +372,23 @@ class ReputationResource:
         (:func:`~uvd_em_sdk.feedback_delegate.verify_feedback_delegate`):
         ``prepared["chain_id"]`` must be a chain this SDK pins a
         FeedbackDelegate on (never 0), ``prepared["delegate"]`` that pinned
-        delegate, and the authorization's ``chainId`` and ``address`` exactly
-        that chain and that delegate. Otherwise
+        delegate, the authorization's ``chainId`` that chain id and its
+        ``address`` that delegate (compared without case), and its signature
+        must recover, over those values and its ``nonce``, to
+        ``prepared["rater_wallet"]``. Otherwise
         :class:`~uvd_em_sdk.exceptions.EMDelegateNotPinnedError` is raised and
-        no request is made.
+        no request is made. What is sent is the authorization as JSON writes
+        it, the same copy that was checked.
 
         ``delegation_acknowledged``: set it to ``True`` only when you showed the
-        account's owner ``prepared["delegation_notice"]`` — the contract the
+        account's owner ``prepared["delegation_notice"]`` (or, from a backend
+        that does not send it, the same facts) — the contract the
         authorization delegates the account to, on which chain, and that the
         account stays delegated after this rating — and the owner accepted.
         It is sent, as ``"delegation_acknowledged": true``, only together with
         an ``authorization`` and only when it is exactly ``True``; without an
-        authorization it is never sent. Execution Market refuses a submit that
-        carries an authorization without it: 422
+        authorization it is never sent. A backend that requires it refuses a
+        submit that carries an authorization without it: 422
         ``relay_delegation_not_acknowledged``, raised as
         :class:`~uvd_em_sdk.exceptions.EMValidationError` with EM's ``code`` in
         ``details["detail"]["code"]``. Nothing was sent on-chain then; show the
@@ -392,7 +399,7 @@ class ReputationResource:
         ``getClients(agentId)`` on the destination chain will show you.
         """
         if authorization is not None:
-            verify_feedback_delegate(prepared, authorization)
+            authorization = _checked_authorization(prepared, authorization)
         body: dict[str, Any] = {
             "task_id": task_id,
             "direction": direction,

@@ -241,28 +241,27 @@ def test_cli_status_table():
 FAKE_DELEGATE_A = "0x" + "aA" * 20
 FAKE_DELEGATE_B = "0x" + "b1" * 20
 
+#: A fake record: only ``version`` and ``deployments`` (with each row's
+#: ``chain_id`` and ``address``) are the extractor's; every other key is made
+#: up, and none of it may reach vendor/em/.
 FAKE_DELEGATES = json.dumps(
     {
-        "contract": "FeedbackDelegate",
-        "note": "PRIVATENOTE: not for the public repository",
-        "registries": {"mainnet": "0xR"},
+        "fake_text": "PRIVATENOTE: not for the public repository",
+        "fake_map": {"fake_key": "0xPRIVATEMAP"},
         "deployments": {
             "base": {
                 "chain_id": 8453,
                 "address": FAKE_DELEGATE_A,
-                "tx": "0xPRIVATETX",
-                "deployer": "0xD",
+                "fake_row_key": "0xPRIVATEROW",
             },
             "base-sepolia": {
                 "chain_id": 84532,
                 "address": FAKE_DELEGATE_B,
-                "note": "PRIVATENOTE",
+                "fake_row_text": "PRIVATENOTE",
             },
         },
-        "pending": {"impossible": {"skale": "PRIVATENOTE"}},
-        "superseded_history": [{"version": "v3", "addresses": {"base": "0xOLD"}}],
+        "fake_list": [{"fake_key": "0xPRIVATELIST"}],
         "version": "v4",
-        "v4": {"known_gotchas": ["PRIVATENOTE"]},
     },
     indent=2,
 )
@@ -381,13 +380,13 @@ def test_build_copies_only_the_retry_decision_table(em_clone):
 
 
 def test_build_copies_only_each_delegate_chain_and_address(em_clone):
-    """The record's notes, deploy transactions, superseded addresses and
-    everything else stay in EM: per network, its chain id and the address."""
+    """Every other key of the record and of each row stays in EM: per
+    network, its chain id and the address."""
     repo, sha = em_clone
     data = vendor.build(repo, sha)["feedback-delegate.json"]
     assert json.loads(data) == EXPECTED_DELEGATES
     assert list(json.loads(data)) == ["base", "base-sepolia"]  # upstream order
-    for private in (b"PRIVATENOTE", b"PRIVATETX", b"0xOLD", b"0xD", b"0xR"):
+    for private in (b"PRIVATE", b"fake_"):
         assert private not in data, private
 
 
