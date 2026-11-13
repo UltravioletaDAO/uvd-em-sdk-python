@@ -4,7 +4,8 @@ Execution Market is a PRIVATE repository and this one is PUBLIC, so its files
 are NOT copied. This script reads them from a commit of an EM clone
 (``git show``, never the working tree), parses them with ``ast`` (never
 imported) and writes into ``vendor/em/`` only what this repository's tests
-consume (``scripts/sync_networks.py``, ``scripts/sync_enums.py`` and
+and generators consume (``scripts/sync_networks.py``,
+``scripts/sync_enums.py``, ``scripts/sync_feedback_delegates.py`` and
 ``tests/test_retry.py``):
 
   - ``networks.json`` — from ``NETWORK_CONFIG``
@@ -21,6 +22,15 @@ consume (``scripts/sync_networks.py``, ``scripts/sync_enums.py`` and
     implementations (sdk/python, the CLI) against it; exceptions by their
     dotted name. EM's code is not copied: ``tests/test_retry.py`` holds the
     SDK to the same table.
+  - ``feedback-delegate.json`` — from EM's FeedbackDelegate deployment record
+    (``contracts/deployments/feedback-delegate.json``), its ``deployments``
+    and only these fields: per network, ``chain_id`` and ``address`` (the v4
+    delegate). Every other key, of the record and of each row, stays in EM.
+    A record of another version
+    than ``DELEGATE_VERSION`` is refused, not vendored: this table is what
+    the SDK lets an EIP-7702 authorization point at
+    (``uvd_em_sdk.feedback_delegate``), and a new delegate version is a
+    decision, not a re-vendor.
   - ``SOURCE`` — the commit and its date (``committed``, UTC), the sha256 of
     each upstream file at that commit and of each vendored file.
     ``tests/test_vendor_em.py`` checks the vendored hashes on every run, CI
@@ -62,8 +72,9 @@ Usage (from the repository root, after ``git fetch`` in the EM clone)::
     python scripts/vendor_em.py --em-repo ../execution-market --check --public-log  # for a public log
 
 then ``python scripts/sync_networks.py && python scripts/sync_enums.py &&
-ruff format .`` to carry a change into the SDK (a change of ``retry.json`` is
-a change of the retry policy: ``tests/test_retry.py`` names it).
+python scripts/sync_feedback_delegates.py && ruff format .`` to carry a change
+into the SDK (a change of ``retry.json`` is a change of the retry policy:
+``tests/test_retry.py`` names it).
 """
 
 from __future__ import annotations
@@ -74,6 +85,7 @@ import contextlib
 import hashlib
 import io
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -94,6 +106,7 @@ UPSTREAM: dict[str, str] = {
     "networks.json": "mcp_server/integrations/x402/network_registry.py",
     "enums.json": "mcp_server/models.py",
     "retry.json": "cli/tests/test_retry.py",
+    "feedback-delegate.json": "contracts/deployments/feedback-delegate.json",
 }
 
 #: The only keys copied out of NETWORK_CONFIG. ESCROW_FLAGS become booleans.
@@ -102,6 +115,12 @@ TOKEN_KEYS = ("address", "name", "decimals")
 ESCROW_FLAGS = ("escrow", "operator")
 #: The decision table of EM's retry equivalence suite, by its names there.
 RETRY_TABLES = ("STATUS_TABLE", "EXCEPTION_TABLE", "TX_HASH_BODIES")
+#: The FeedbackDelegate version whose ``deployments`` are copied, and the only
+#: keys copied per network.
+DELEGATE_VERSION = "v4"
+DELEGATE_KEYS = ("chain_id", "address")
+#: An EVM address as the SDK accepts one: 0x (lower-case x) and 40 hex digits.
+EVM_ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 
 #: git's and ssh's words for "the key, or the repository, was refused".
 #: Named, never quoted: a failed git call with one of them is an error.
@@ -142,7 +161,13 @@ SOURCE_HEADER = (
     "# says which). tests/test_vendor_em.py checks each vendored sha256; `<file> from`",
     "# is the sha256 of the upstream file at `commit` (scripts/vendor_em.py --check).",
     "# To update: python scripts/vendor_em.py --em-repo <EM clone> [--commit <sha>],",
-    "# then python scripts/sync_networks.py && python scripts/sync_enums.py && ruff format .",
+    "# then python scripts/sync_networks.py && python scripts/sync_enums.py &&",
+    "# python scripts/sync_feedback_delegates.py && ruff format .",
+)
+#: The commands that carry a re-vendor into the SDK, as the Fix lines name them.
+SYNC_COMMANDS = (
+    "python scripts/sync_networks.py && python scripts/sync_enums.py "
+    "&& python scripts/sync_feedback_delegates.py && ruff format ."
 )
 
 
@@ -220,6 +245,42 @@ def parse_retry_tables(source: str) -> dict[str, Any]:
     if missing:
         raise SystemExit(f"{missing} not found in {UPSTREAM['retry.json']}")
     return {name: tables[name] for name in RETRY_TABLES}
+
+
+def parse_feedback_delegates(source: str) -> dict[str, dict[str, Any]]:
+    """The ``deployments`` of EM's FeedbackDelegate record, reduced to
+    DELEGATE_KEYS per network, in upstream order.
+
+    Refused, not vendored, when the record is not of DELEGATE_VERSION, has no
+    deployments, or holds a row that is not a positive integer ``chain_id``
+    and an ``address`` written 0x and 40 hex digits, or two rows on one
+    chain: the SDK refuses any EIP-7702 delegation this table does not name,
+    so a row it cannot read is not one to guess at."""
+    name = UPSTREAM["feedback-delegate.json"]
+    record = json.loads(source)
+    if not isinstance(record, dict) or record.get("version") != DELEGATE_VERSION:
+        raise SystemExit(f"{name} is not a {DELEGATE_VERSION} FeedbackDelegate record")
+    deployments = record.get("deployments")
+    if not isinstance(deployments, dict) or not deployments:
+        raise SystemExit(f"no deployments in {name}")
+    projected: dict[str, dict[str, Any]] = {}
+    for network, row in deployments.items():
+        row = row if isinstance(row, dict) else {}
+        chain_id, address = row.get("chain_id"), row.get("address")
+        if not (
+            type(chain_id) is int
+            and chain_id > 0
+            and isinstance(address, str)
+            and EVM_ADDRESS.fullmatch(address)
+        ):
+            raise SystemExit(
+                f"deployments.{network} in {name} is not a chain id and an address"
+            )
+        projected[network] = {"chain_id": chain_id, "address": address}
+    chain_ids = [row["chain_id"] for row in projected.values()]
+    if len(set(chain_ids)) != len(chain_ids):
+        raise SystemExit(f"two deployments of {name} are on the same chain")
+    return projected
 
 
 def enum_names() -> tuple[str, ...]:
@@ -336,6 +397,9 @@ def build(em_repo: Path, commit: str) -> dict[str, bytes]:
         "enums.json": render_json(project_enums(enums)),
         "retry.json": render_json(
             parse_retry_tables(upstream["retry.json"].decode("utf-8"))
+        ),
+        "feedback-delegate.json": render_json(
+            parse_feedback_delegates(upstream["feedback-delegate.json"].decode("utf-8"))
         ),
     }
     files["SOURCE"] = render_source(
@@ -454,8 +518,7 @@ def run_check(
         commit = "<the sha --check names on a clone>" if public else head
         say(
             f"Fix: python scripts/vendor_em.py --em-repo {clone} --commit {commit}, "
-            "then python scripts/sync_networks.py && python scripts/sync_enums.py "
-            "&& ruff format . (the parity tests name what the SDK must follow)"
+            f"then {SYNC_COMMANDS} (the parity tests name what the SDK must follow)"
         )
         status = 1
     else:
@@ -554,11 +617,7 @@ def main() -> int:
     VENDOR_DIR.mkdir(parents=True, exist_ok=True)
     for name, data in build(args.em_repo, commit).items():
         (VENDOR_DIR / name).write_bytes(data)
-    print(
-        f"Vendored {REPO}@{commit[:12]} into vendor/em/. Now run: "
-        "python scripts/sync_networks.py && python scripts/sync_enums.py "
-        "&& ruff format ."
-    )
+    print(f"Vendored {REPO}@{commit[:12]} into vendor/em/. Now run: {SYNC_COMMANDS}")
     return 0
 
 

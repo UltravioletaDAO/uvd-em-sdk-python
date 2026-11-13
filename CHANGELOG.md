@@ -1,6 +1,117 @@
 # Changelog
 
-## [0.10.0] — unreleased
+## [0.11.0] — unreleased
+
+An EIP-7702 authorization gives the contract it names the power to act as the
+signing account. `submit_relayed_rating` carries one the first time a wallet
+rates on a chain, and the contract comes from Execution Market's `prepare`
+answer. This release checks that answer against a table the SDK ships, and
+lets the caller say the account's owner accepted the delegation, which
+Execution Market's backend is set to require with an authorization.
+
+### Added
+
+- `submit_relayed_rating(..., delegation_acknowledged=False)`, keyword-only.
+  It is sent as `"delegation_acknowledged": true` only together with an
+  `authorization` and only when it is exactly `True`; without an
+  authorization it is never sent. Set it only when the account's owner was
+  shown `prepared["delegation_notice"]` (which contract, which chain, and that
+  the account stays delegated after the rating) and accepted. A backend that
+  requires it refuses an authorization without it: 422
+  `relay_delegation_not_acknowledged`, raised as `EMValidationError` with the
+  code in `details["detail"]["code"]`. A backend that does not require it
+  ignores the field, so this release works with both.
+- `uvd_em_sdk.feedback_delegate`, exported from `uvd_em_sdk`:
+  `FEEDBACK_DELEGATES` (network -> `FeedbackDelegate(network, chain_id,
+  address)`), `get_feedback_delegate(chain_id)` and
+  `verify_feedback_delegate(prepared, authorization=None)`. The table is
+  Execution Market's deployment record of the v4 FeedbackDelegate, per
+  network its chain id and address and nothing else: base (8453), ethereum
+  (1), polygon (137), arbitrum (42161), optimism (10), celo (42220), bsc (56),
+  monad (143), arc (5042) and base-sepolia (84532). Call
+  `verify_feedback_delegate(prepared)` before signing the authorization and
+  sign over the `chain_id` and `address` it returns.
+- `EMDelegateNotPinnedError` (an `EMError`): `code` names the check that
+  failed (`prepared_invalid`, `chain_id_invalid`, `chain_not_pinned`,
+  `network_mismatch`, `delegate_not_pinned`, `authorization_invalid`,
+  `authorization_wrong_chain`, `authorization_wrong_delegate`,
+  `authorization_wrong_signer`), `details` what was compared, and
+  `status_code` is `None`.
+- `vendor/em/feedback-delegate.json` and `scripts/sync_feedback_delegates.py`,
+  which generates the table from it. `scripts/vendor_em.py` vendors the file
+  from EM's `contracts/deployments/feedback-delegate.json` and refuses a record
+  of another version than v4, a row that is not a positive integer chain id
+  and an address written `0x` and 40 hex digits, and two rows on one chain.
+  `--check` compares it like the other vendored files.
+
+### Changed
+
+- `submit_relayed_rating` with an `authorization` checks, before sending
+  anything: `prepared["chain_id"]` is a positive `int` (absent, `None` and 0
+  are refused: 0 is EIP-7702's wildcard, valid on every chain); the SDK pins a
+  delegate on that chain; `prepared["network"]`, when present, is that chain's
+  network; `prepared["delegate"]` is the pinned delegate; the authorization's
+  `chainId` is exactly that chain id as an `int`; its `address` is the pinned
+  delegate; and its signature (`yParity`, `r`, `s`) recovers, over exactly
+  that chain id, that address and its `nonce`, to `prepared["rater_wallet"]`.
+  The last one catches a wallet that signed other values than the dict
+  carries: chainId 0 under a dict that says this chain would hand whoever
+  reads the body a delegation valid on every chain. Addresses are compared
+  without case and must be written `0x` and 40 hex digits; `chain_id` and
+  `y_parity` are read when `chainId` and `yParity` are absent, as Execution
+  Market reads them. `nonce` and `yParity` must be ints and `r` and `s` 0x-hex
+  strings (Execution Market's model takes them so), with a nonce below
+  2**64 - 1, `yParity` 0 or 1 and `s` in the lower half of the curve order
+  (what EIP-7702 chains execute). A mismatch raises `EMDelegateNotPinnedError`
+  and no request is made. What is sent is the authorization as JSON writes it
+  (NaN and Infinity refused), the same plain copy that was checked. This
+  refuses a submit that 0.10.0 sent: an authorization with a hand-built
+  `prepared` that lacks `chain_id`, `delegate` or `rater_wallet`, for a
+  delegate the table does not name, whose signature is not the rater's over
+  those values, or with a decimal-string `nonce` or a bool `yParity`, which
+  Execution Market's model accepted. A delegate Execution
+  Market deploys later is refused until a release carries it. Without an
+  `authorization` nothing is checked. The signature is recovered with
+  `eth-keys`, `rlp` and `eth-utils`, which `eth-account` (required through
+  `uvd-x402-sdk[wallet]`) depends on: no new requirement.
+- `prepare_relayed_rating`'s docstring points at `verify_feedback_delegate`
+  instead of a block-explorer check, which it gave because no list of
+  deployments was public.
+- `vendor/em/SOURCE` keeps its pin (the same commit and date): `networks.json`,
+  `enums.json` and `retry.json` are byte-identical, and it gains
+  `feedback-delegate.json` and the sha256 of EM's record at that commit.
+
+### Fixed
+
+- README: the rater-signed reputation example called
+  `submit_relayed_rating(prep, signature)` without `task_id`, `direction` and
+  `score`, which are required (a `TypeError`), and signed with
+  `wallet.sign_message(prep["digest"])`, an EIP-191 `personal_sign` over the
+  digest's text: the double envelope `prepare_relayed_rating`'s docstring
+  warns against, which fails as `relay_bad_signature`. It now passes the
+  three fields, says how to sign the digest, and shows the first-rating flow.
+
+### Tests
+
+- `tests/test_reputation.py`: the exact body with and without an
+  authorization; `delegation_acknowledged` never sent without an authorization
+  nor for a truthy value that is not `True`; a foreign delegate, another
+  chain, chain id 0, absent or a bool, a malformed address, a signature that
+  is not the rater's over the values the dict carries (signed for chain 0,
+  another key, nonce or address), and one in a shape Execution Market or the
+  chain refuses (int `r`/`s`, string `nonce`/`yParity`, high `s`, a nonce of
+  2**64 - 1) refused with no request; EM's 422 raised with its code. The authorization fixture
+  is a known answer from eth-account's `Account.sign_authorization` with a
+  throwaway key.
+- `tests/test_feedback_delegates_sync.py` holds the table to
+  `vendor/em/feedback-delegate.json`, and `tests/test_parity_runs.py` proves
+  it runs in a standalone checkout and fails on a drift on either side.
+- `tests/test_vendor_em.py`: the extractor copies only network, chain id and
+  address, refuses the records above, and `--check` flags a redeployed
+  delegate (not a changed note). The public-log guard reads a commit as a
+  whole word: "feedback" holds the hex run "feedbac".
+
+## [0.10.0] — 2026-10-12
 
 0.9.2 (`uvd-x402-sdk<0.98`) was never released: its ceiling already excluded
 0.98.0 and 0.99.0, published the same day. Its changes are in this release.

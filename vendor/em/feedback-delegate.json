@@ -1,0 +1,42 @@
+{
+  "base": {
+    "chain_id": 8453,
+    "address": "0x260D3D0258680aA458D0EBB8BcAE8A2f68bf6163"
+  },
+  "ethereum": {
+    "chain_id": 1,
+    "address": "0x9577F05D10D2052C75D115e3a0A8f9Dc0cBb7A7b"
+  },
+  "polygon": {
+    "chain_id": 137,
+    "address": "0x1dfc1A578bf321A42c441B4bd60fD5d7bb4BFaD5"
+  },
+  "arbitrum": {
+    "chain_id": 42161,
+    "address": "0xf670C69BCbb2453FaE5Ec009c2b6dd934BE46A7f"
+  },
+  "optimism": {
+    "chain_id": 10,
+    "address": "0x794C907FdfC71BFaF0b86D0e463BBD6E949A31bA"
+  },
+  "celo": {
+    "chain_id": 42220,
+    "address": "0x0Dff14dFF648769cB8C3D5F5a150f32Ca2BB9511"
+  },
+  "bsc": {
+    "chain_id": 56,
+    "address": "0xe25cF9B9F5A3B5faa7628c751466df0166d96B59"
+  },
+  "monad": {
+    "chain_id": 143,
+    "address": "0x794C907FdfC71BFaF0b86D0e463BBD6E949A31bA"
+  },
+  "arc": {
+    "chain_id": 5042,
+    "address": "0x955Cc9fB9aB95FC0821ae74197D273dde5dA84f1"
+  },
+  "base-sepolia": {
+    "chain_id": 84532,
+    "address": "0x9551263b9B83b1A737D55fd5e67Fb6D60e4eF787"
+  }
+}

@@ -45,11 +45,13 @@ def test_version_consistency():
         assert 'path = "uvd_em_sdk/__init__.py"' in raw
 
 
-def test_current_version_is_0_10_0():
+def test_current_version_is_0_11_0():
     """v0.9.0 = the package leaves the Execution Market monorepo under its
     own name and import path, ``uvd_em_sdk`` / ``uvd-em-sdk`` (the 0.8.0
     API, renamed). v0.9.1 = ``workers.register()`` sends its credential and
     ``uvd-x402-sdk`` goes up to 0.94. v0.10.0 = the ``uvd-x402-sdk`` ceiling
-    goes up to ``<1.0`` (0.9.2, ``<0.98``, was never released); see
-    CHANGELOG.md."""
-    assert uvd_em_sdk.__version__ == "0.10.0"
+    goes up to ``<1.0`` (0.9.2, ``<0.98``, was never released). v0.11.0 =
+    ``submit_relayed_rating`` checks an EIP-7702 authorization against the
+    pinned FeedbackDelegate table and can send ``delegation_acknowledged``;
+    see CHANGELOG.md."""
+    assert uvd_em_sdk.__version__ == "0.11.0"

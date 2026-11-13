@@ -3,7 +3,8 @@
 # says which). tests/test_vendor_em.py checks each vendored sha256; `<file> from`
 # is the sha256 of the upstream file at `commit` (scripts/vendor_em.py --check).
 # To update: python scripts/vendor_em.py --em-repo <EM clone> [--commit <sha>],
-# then python scripts/sync_networks.py && python scripts/sync_enums.py && ruff format .
+# then python scripts/sync_networks.py && python scripts/sync_enums.py &&
+# python scripts/sync_feedback_delegates.py && ruff format .
 repo: UltravioletaDAO/execution-market
 commit: 8bce8dbb77b7252178794401e6f8d0f248139ae6
 committed: 2026-10-12T12:35:30+00:00
@@ -13,3 +14,5 @@ enums.json: sha256=2f9900c9bb7bdc3ce5d724b141702bdc2d5d7e1758611ac9346e469f3fa6f
 enums.json from: mcp_server/models.py sha256=3b23716ec3efc4b98d5c2463690b862e0da8d383b921eb0244577504a5fb48dc
 retry.json: sha256=fcf09670f4674589a762eb5cd598e869899e282fc2cc93fd28d5ad80f82b5a93
 retry.json from: cli/tests/test_retry.py sha256=d05cf2e9b0c1f733bb6af56d26022be7f9380f5619fa0a1f66816b0e143f3bea
+feedback-delegate.json: sha256=0dd06f4c321210d8a01a6dcaa3546386a28a95e6cbb790935bdcfbbc2731d177
+feedback-delegate.json from: contracts/deployments/feedback-delegate.json sha256=288e877c6960d3b6ac73459c1062e4637f8fe2209e83c6d1ac547fcff0d2610f

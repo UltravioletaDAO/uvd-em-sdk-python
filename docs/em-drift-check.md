@@ -51,7 +51,7 @@ reads it.
 | The run says | Meaning | What to do |
 |---|---|---|
 | two `OK — …` lines | `vendor/em/` is SOURCE's commit, and EM's `main` yields the same bytes | nothing |
-| `UPSTREAM DRIFT — origin/main: a re-vendor would change [...]` | EM changed what the SDK mirrors | on a clone, `--check` names the commit; re-vendor it (`--commit <sha>`), then `sync_networks.py`, `sync_enums.py`, `ruff format .`, and a PR. The parity tests name what the SDK must follow |
+| `UPSTREAM DRIFT — origin/main: a re-vendor would change [...]` | EM changed what the SDK mirrors | on a clone, `--check` names the commit; re-vendor it (`--commit <sha>`), then `sync_networks.py`, `sync_enums.py`, `sync_feedback_delegates.py`, `ruff format .`, and a PR (a change of `feedback-delegate.json` changes which contracts the SDK lets an EIP-7702 authorization point at: review it as such). The parity tests name what the SDK must follow |
 | `DRIFT — vendor/em/ is not what SOURCE's commit yields: [...]` | `vendor/em/` is not what its own pin yields | re-vendor at the same pin (the `Fix:` line) |
 | `STALE — origin/main does not contain SOURCE's commit` | SOURCE pins a commit that is not on EM's `main` (history rewritten, or a pin from another branch) | re-vendor from `main` |
 | `ERROR — the check did not finish (<exception>)` | the check failed; its message is left out because it may quote EM | run `--check` on a clone to see it |

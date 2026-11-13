@@ -59,3 +59,18 @@ class EMServerError(EMError):
         details: dict[str, Any] | None = None,
     ):
         super().__init__(message, status_code=status_code, details=details)
+
+
+class EMDelegateNotPinnedError(EMError):
+    """An EIP-7702 delegation the SDK does not pin, refused before any request.
+
+    Raised by :func:`uvd_em_sdk.feedback_delegate.verify_feedback_delegate`
+    (and so by ``submit_relayed_rating`` with an ``authorization``). ``code``
+    names the check that failed (that function lists them); ``details``
+    carries what was compared. ``status_code`` is ``None``: nothing reached
+    the server.
+    """
+
+    def __init__(self, code: str, message: str, details: dict[str, Any] | None = None):
+        super().__init__(message, status_code=None, details=details)
+        self.code = code

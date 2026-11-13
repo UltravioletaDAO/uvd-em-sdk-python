@@ -57,6 +57,13 @@ from .exceptions import (
     EMNotFoundError,
     EMValidationError,
     EMServerError,
+    EMDelegateNotPinnedError,
+)
+from .feedback_delegate import (
+    FEEDBACK_DELEGATES,
+    FeedbackDelegate,
+    get_feedback_delegate,
+    verify_feedback_delegate,
 )
 from .fees import FeeBreakdown, calculate_fee, calculate_reverse_fee, get_fee_rate
 from .networks import (
@@ -90,7 +97,7 @@ from uvd_x402_sdk.wallet import WalletAdapter, EnvKeyAdapter, OWSWalletAdapter
 # - pyproject.toml derives it at build time ([tool.hatch.version])
 # - client.py derives the User-Agent from it at runtime
 # Bump it HERE only; test_version.py enforces consistency.
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 __all__ = [
     # Client
@@ -139,6 +146,12 @@ __all__ = [
     "EMNotFoundError",
     "EMValidationError",
     "EMServerError",
+    "EMDelegateNotPinnedError",
+    # FeedbackDelegate pins (what an EIP-7702 authorization may point at)
+    "FeedbackDelegate",
+    "FEEDBACK_DELEGATES",
+    "get_feedback_delegate",
+    "verify_feedback_delegate",
     # Fees
     "FeeBreakdown",
     "calculate_fee",
