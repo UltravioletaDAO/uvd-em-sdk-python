@@ -8,8 +8,10 @@ Enums and the network registry are generated from the backend source of truth
 run in this repository's CI against a pinned copy of the backend data
 (`vendor/em/`; commit, commit date and sha256 in `vendor/em/SOURCE`). The
 retry policy is held the same way to the decision table Execution Market tests
-its other clients against (`vendor/em/retry.json`, `tests/test_retry.py`).
-CI checks the copy against those hashes; that the copy is what that backend
+its other clients against (`vendor/em/retry.json`, `tests/test_retry.py`), and
+so is the table of FeedbackDelegate contracts an EIP-7702 authorization may
+point at (`vendor/em/feedback-delegate.json`,
+`scripts/sync_feedback_delegates.py`). CI checks the copy against those hashes; that the copy is what that backend
 commit yields, and that the backend's newer `origin/main` yields the same
 bytes, is checked with
 `python scripts/vendor_em.py --em-repo <clone> --check`, every Monday by
@@ -255,25 +257,59 @@ This rail moves authorship back to the rater without changing the registry. Gas
 stays sponsored: your agent signs, the Facilitator pays.
 
 ```python
+from uvd_em_sdk import verify_feedback_delegate
+
+rating = dict(task_id=task_id, direction="executor_rates_publisher", score=95)
 prep = await client.reputation.prepare_relayed_rating(
-    task_id=task_id,
-    direction="executor_rates_publisher",   # or publisher_rates_executor
-    score=95,
-    comment="paid on time, clear spec",
+    **rating, comment="paid on time, clear spec"
 )
+signature = ...   # the digest, signed as the docstring says (raw prehash)
 
-# prep["delegated"] is False the FIRST time this wallet rates on this chain:
-# an EIP-7702 authorization must be signed too, and `prep["account_nonce"]`
-# carries what it needs. From the second rating on, only the digest.
-signature = wallet.sign_message(prep["digest"])
+authorization, acknowledged = None, False
+if not prep["delegated"]:
+    # The FIRST rating of this wallet on this chain also delegates the account
+    # (EIP-7702) to Execution Market's FeedbackDelegate. Check the contract the
+    # server named against the table this SDK ships, BEFORE signing anything:
+    delegate = verify_feedback_delegate(prep)   # raises EMDelegateNotPinnedError
+    # Show the owner what signing does, and go on only if they accept.
+    if not owner_accepts(prep["delegation_notice"]):
+        raise SystemExit("not rated: the owner declined the delegation")
+    authorization = ...   # EIP-7702, signed over chainId=delegate.chain_id,
+                          # address=delegate.address, nonce=prep["account_nonce"]
+    acknowledged = True
 
-result = await client.reputation.submit_relayed_rating(prep, signature)
+result = await client.reputation.submit_relayed_rating(
+    prep,
+    signature,
+    **rating,
+    authorization=authorization,
+    delegation_acknowledged=acknowledged,
+)
 assert result["authored_by"].lower() == my_wallet.lower()   # not the sponsor's
 ```
 
 **Echo the `prepare` fields back verbatim.** The Facilitator rebuilds the
 registry calldata from them and requires the signature to cover exactly that;
 recompute one and the signature silently stops verifying.
+
+**Never sign a delegation the SDK does not pin.** An EIP-7702 authorization
+gives the contract it names the power to act as your account, and the name
+comes from a server's answer. `verify_feedback_delegate(prep)` checks
+`prep["delegate"]` and `prep["chain_id"]` against
+`uvd_em_sdk.FEEDBACK_DELEGATES` — per network, the chain id and the v4
+FeedbackDelegate of Execution Market's deployment record, pinned in this
+release — and refuses chain id 0 (EIP-7702's wildcard: valid on every chain).
+`submit_relayed_rating` runs the same check, plus the authorization's
+`chainId` and `address`, and raises `EMDelegateNotPinnedError` (with a `code`)
+before sending anything when one does not match. A delegate Execution Market
+deploys later is refused until a release of this SDK carries it.
+
+**`delegation_acknowledged=True` means the owner saw and accepted
+`prep["delegation_notice"]`**: which contract, which chain, and that the
+account stays delegated after the rating. It is sent only with an
+`authorization`. Execution Market refuses an authorization without it (422
+`relay_delegation_not_acknowledged`, raised as `EMValidationError`; the code is
+in `details["detail"]["code"]`).
 
 **Do not fall back to the legacy path when signing fails.** It would put the
 sponsor's address on your rating while reporting success — the exact confusion

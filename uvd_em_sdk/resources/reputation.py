@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
+from ..feedback_delegate import verify_feedback_delegate
 from ..models import (
     AgentIdentity,
     AgentReputation,
@@ -322,12 +323,15 @@ class ReputationResource:
         **Verify ``delegate`` before signing that authorization.** A 7702
         authorization gives the named contract the power to act as your account;
         taking the address on trust from any server response means a compromised
-        one could drain you, with a signature that is genuinely yours. The
-        canonical list of FeedbackDelegate deployments is not public yet. Until
-        it is, check ``delegate`` in a block explorer before signing the FIRST
-        authorization: the contract must be verified, and its
-        ``REPUTATION_REGISTRY()`` must equal the Reputation Registry of that
-        network. Both are necessary conditions, not sufficient ones.
+        one could drain you, with a signature that is genuinely yours.
+        :func:`~uvd_em_sdk.feedback_delegate.verify_feedback_delegate` checks
+        ``delegate`` and ``chain_id`` against the FeedbackDelegate table this
+        SDK ships (``uvd_em_sdk.feedback_delegate.FEEDBACK_DELEGATES``) and
+        refuses chainId 0; sign over the ``chain_id`` and ``address`` it
+        returns. Then show the account's owner ``delegation_notice`` — which
+        contract, which chain, and that the account stays delegated after the
+        rating — and sign only if they accept (see :meth:`submit_relayed_rating`,
+        ``delegation_acknowledged``).
         """
         body: dict[str, Any] = {
             "task_id": task_id,
@@ -349,6 +353,7 @@ class ReputationResource:
         direction: str,
         score: int,
         authorization: dict[str, Any] | None = None,
+        delegation_acknowledged: bool = False,
     ) -> dict[str, Any]:
         """Relay your signed rating. The Facilitator pays; you are the author.
 
@@ -360,12 +365,34 @@ class ReputationResource:
         signature stops verifying, with no error naming the cause.
 
         ``authorization`` is required only when ``prepared["delegated"]`` was
-        ``False``.
+        ``False``. When given, it is checked before anything is sent
+        (:func:`~uvd_em_sdk.feedback_delegate.verify_feedback_delegate`):
+        ``prepared["chain_id"]`` must be a chain this SDK pins a
+        FeedbackDelegate on (never 0), ``prepared["delegate"]`` that pinned
+        delegate, and the authorization's ``chainId`` and ``address`` exactly
+        that chain and that delegate. Otherwise
+        :class:`~uvd_em_sdk.exceptions.EMDelegateNotPinnedError` is raised and
+        no request is made.
+
+        ``delegation_acknowledged``: set it to ``True`` only when you showed the
+        account's owner ``prepared["delegation_notice"]`` — the contract the
+        authorization delegates the account to, on which chain, and that the
+        account stays delegated after this rating — and the owner accepted.
+        It is sent, as ``"delegation_acknowledged": true``, only together with
+        an ``authorization`` and only when it is exactly ``True``; without an
+        authorization it is never sent. Execution Market refuses a submit that
+        carries an authorization without it: 422
+        ``relay_delegation_not_acknowledged``, raised as
+        :class:`~uvd_em_sdk.exceptions.EMValidationError` with EM's ``code`` in
+        ``details["detail"]["code"]``. Nothing was sent on-chain then; show the
+        notice and submit again.
 
         Returns the on-chain result, including ``authored_by`` — which should be
         your own wallet. That is the whole point, and it is checkable:
         ``getClients(agentId)`` on the destination chain will show you.
         """
+        if authorization is not None:
+            verify_feedback_delegate(prepared, authorization)
         body: dict[str, Any] = {
             "task_id": task_id,
             "direction": direction,
@@ -390,6 +417,8 @@ class ReputationResource:
         }
         if authorization is not None:
             body["authorization"] = authorization
+            if delegation_acknowledged is True:
+                body["delegation_acknowledged"] = True
         return await self._client._request(
             "POST", "/reputation/relay/submit", json=body
         )

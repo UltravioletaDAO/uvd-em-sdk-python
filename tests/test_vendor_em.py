@@ -104,6 +104,14 @@ def test_vendored_copy_holds_only_the_fields_the_sdk_reads():
         assert re.fullmatch(r"httpx\.[A-Za-z]+", name), name
         assert type(should_retry) is bool, name
     assert all(type(body) is dict for body in retry["TX_HASH_BODIES"])
+    delegates = json.loads(
+        (VENDOR / "feedback-delegate.json").read_text(encoding="utf-8")
+    )
+    assert delegates
+    for network, row in delegates.items():
+        assert set(row) == {"chain_id", "address"}, network
+        assert type(row["chain_id"]) is int and row["chain_id"] > 0, network
+        assert re.fullmatch(r"0x[0-9a-fA-F]{40}", row["address"]), network
 
 
 def _no_git_env() -> dict:
@@ -230,6 +238,35 @@ def test_cli_status_table():
     assert with_backoff
 '''
 
+FAKE_DELEGATE_A = "0x" + "aA" * 20
+FAKE_DELEGATE_B = "0x" + "b1" * 20
+
+FAKE_DELEGATES = json.dumps(
+    {
+        "contract": "FeedbackDelegate",
+        "note": "PRIVATENOTE: not for the public repository",
+        "registries": {"mainnet": "0xR"},
+        "deployments": {
+            "base": {
+                "chain_id": 8453,
+                "address": FAKE_DELEGATE_A,
+                "tx": "0xPRIVATETX",
+                "deployer": "0xD",
+            },
+            "base-sepolia": {
+                "chain_id": 84532,
+                "address": FAKE_DELEGATE_B,
+                "note": "PRIVATENOTE",
+            },
+        },
+        "pending": {"impossible": {"skale": "PRIVATENOTE"}},
+        "superseded_history": [{"version": "v3", "addresses": {"base": "0xOLD"}}],
+        "version": "v4",
+        "v4": {"known_gotchas": ["PRIVATENOTE"]},
+    },
+    indent=2,
+)
+
 EXPECTED_NETWORKS = {
     "base": {
         "chain_id": 8453,
@@ -267,6 +304,13 @@ EXPECTED_RETRY = {
     "TX_HASH_BODIES": [{"transaction": {"hash": "0xabc"}}, {"txHash": "0xabc"}],
 }
 
+EXPECTED_DELEGATES = {
+    "base": {"chain_id": 8453, "address": FAKE_DELEGATE_A},
+    "base-sepolia": {"chain_id": 84532, "address": FAKE_DELEGATE_B},
+}
+
+DELEGATES = Path("contracts/deployments/feedback-delegate.json")
+
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(
@@ -292,9 +336,11 @@ def em_clone(tmp_path, monkeypatch):
     (repo / "mcp_server" / "models.py").write_bytes(FAKE_MODELS.encode("utf-8"))
     (repo / "cli" / "tests").mkdir(parents=True)
     (repo / "cli" / "tests" / "test_retry.py").write_bytes(FAKE_RETRY.encode("utf-8"))
+    (repo / DELEGATES).parent.mkdir(parents=True)
+    (repo / DELEGATES).write_bytes(FAKE_DELEGATES.encode("utf-8"))
     (tmp_path / "no-hooks").mkdir()
     _git(repo, "init", "-q")
-    _git(repo, "add", "mcp_server", "cli")
+    _git(repo, "add", "mcp_server", "cli", "contracts")
     _git(
         repo,
         "-c",
@@ -332,6 +378,65 @@ def test_build_copies_only_the_retry_decision_table(em_clone):
     retry = json.loads(vendor.build(repo, sha)["retry.json"])
     assert retry == EXPECTED_RETRY
     assert list(retry) == ["STATUS_TABLE", "EXCEPTION_TABLE", "TX_HASH_BODIES"]
+
+
+def test_build_copies_only_each_delegate_chain_and_address(em_clone):
+    """The record's notes, deploy transactions, superseded addresses and
+    everything else stay in EM: per network, its chain id and the address."""
+    repo, sha = em_clone
+    data = vendor.build(repo, sha)["feedback-delegate.json"]
+    assert json.loads(data) == EXPECTED_DELEGATES
+    assert list(json.loads(data)) == ["base", "base-sepolia"]  # upstream order
+    for private in (b"PRIVATENOTE", b"PRIVATETX", b"0xOLD", b"0xD", b"0xR"):
+        assert private not in data, private
+
+
+def _record(**change) -> str:
+    record = json.loads(FAKE_DELEGATES)
+    record.update(change)
+    return json.dumps(record)
+
+
+def _row(**change) -> str:
+    deployments = json.loads(FAKE_DELEGATES)["deployments"]
+    deployments["base"] = {**deployments["base"], **change}
+    return _record(deployments=deployments)
+
+
+@pytest.mark.parametrize(
+    "source, match",
+    [
+        pytest.param(_record(version="v5"), "not a v4", id="another-version"),
+        pytest.param(_record(version=None), "not a v4", id="no-version"),
+        pytest.param("[]", "not a v4", id="not-an-object"),
+        pytest.param(_record(deployments={}), "no deployments", id="no-deployments"),
+        pytest.param(_record(deployments=[]), "no deployments", id="a-list"),
+        pytest.param(_row(chain_id=0), "deployments.base", id="chain-0"),
+        pytest.param(_row(chain_id=-1), "deployments.base", id="chain-negative"),
+        pytest.param(_row(chain_id=True), "deployments.base", id="chain-true"),
+        pytest.param(_row(chain_id="8453"), "deployments.base", id="chain-string"),
+        pytest.param(_row(chain_id=None), "deployments.base", id="chain-absent"),
+        pytest.param(
+            _row(address="0X" + "aA" * 20), "deployments.base", id="address-0X"
+        ),
+        pytest.param(
+            _row(address="0x" + "aA" * 19), "deployments.base", id="address-short"
+        ),
+        pytest.param(
+            _row(address="0x" + "aA" * 20 + "\n"),
+            "deployments.base",
+            id="address-newline",
+        ),
+        pytest.param(_row(address=None), "deployments.base", id="address-absent"),
+        pytest.param(_row(chain_id=84532), "same chain", id="two-rows-one-chain"),
+    ],
+)
+def test_a_delegate_record_the_sdk_cannot_pin_is_refused(source, match):
+    """Refused, not vendored: the SDK refuses every delegation this table does
+    not name, so a row it cannot read is not one to guess at, and a new
+    delegate version is a decision, not a re-vendor."""
+    with pytest.raises(SystemExit, match=match):
+        vendor.parse_feedback_delegates(source)
 
 
 def test_source_dates_the_commit_with_its_committer_date_in_utc(em_clone):
@@ -562,6 +667,41 @@ def test_check_flags_a_retry_policy_changed_upstream(em_clone, sdk_tree, tmp_pat
     assert "a re-vendor would change ['retry.json']" in result.stdout
 
 
+def test_check_flags_a_delegate_redeployed_upstream(em_clone, sdk_tree, tmp_path):
+    """A new delegate address is what the SDK must not miss: it refuses every
+    delegation its table does not name, so EM's next delegate is refused until
+    a re-vendor carries it. The weekly run says so, without the address."""
+    repo, pinned = em_clone
+    record = repo / DELEGATES
+    record.write_bytes(
+        record.read_bytes().replace(FAKE_DELEGATE_A.encode(), b"0x" + b"cC" * 20)
+    )
+    _fetched(repo, _commit(repo, tmp_path, "base gets a new FeedbackDelegate"))
+
+    result = _check(sdk_tree, repo)
+    public = _check(sdk_tree, repo, "--public-log")
+
+    assert result.returncode == public.returncode == 1, result.stdout
+    assert "a re-vendor would change ['feedback-delegate.json']" in result.stdout
+    assert _public(public, pinned)[1] == (
+        "UPSTREAM DRIFT — origin/main: a re-vendor would change "
+        "['feedback-delegate.json']"
+    )
+    assert "cC" * 20 not in result.stdout + public.stdout
+
+
+def test_check_is_green_when_only_a_delegate_note_changes(em_clone, sdk_tree, tmp_path):
+    repo, _ = em_clone
+    record = repo / DELEGATES
+    record.write_bytes(record.read_bytes().replace(b"PRIVATENOTE", b"OTHERNOTE"))
+    _fetched(repo, _commit(repo, tmp_path, "a note of the record changes"))
+
+    result = _check(sdk_tree, repo)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "same vendored bytes" in result.stdout
+
+
 def test_check_is_green_when_upstream_yields_the_same_bytes(
     em_clone, sdk_tree, tmp_path
 ):
@@ -751,7 +891,10 @@ def test_the_job_runs_the_script_it_names(tmp_path):
 # --check --public-log: the weekly run's log is as public as this repository
 # ---------------------------------------------------------------------------
 
-_NAMES = r"\[(?:'(?:networks\.json|enums\.json|retry\.json|SOURCE)'(?:, )?)+\]"
+_NAMES = (
+    r"\[(?:'(?:networks\.json|enums\.json|retry\.json|feedback-delegate\.json"
+    r"|SOURCE)'(?:, )?)+\]"
+)
 #: Every line --public-log may print. Literal on purpose: what a public log
 #: says about a private repository widens only by changing this too.
 PUBLIC_LINES = (
@@ -764,8 +907,8 @@ PUBLIC_LINES = (
     rf"UPSTREAM DRIFT — origin/main: a re-vendor would change {_NAMES}",
     r"Fix: python scripts/vendor_em\.py --em-repo <EM clone> --commit <the sha"
     r" --check names on a clone>, then python scripts/sync_networks\.py && python"
-    r" scripts/sync_enums\.py && ruff format \. \(the parity tests name what the"
-    r" SDK must follow\)",
+    r" scripts/sync_enums\.py && python scripts/sync_feedback_delegates\.py && ruff"
+    r" format \. \(the parity tests name what the SDK must follow\)",
     r"OK — origin/main: same vendored bytes, nothing to re-vendor",
     r"ERROR — the check did not finish \([A-Za-z]+\); its message is left out of"
     r" a public log, it may quote Execution Market\. Run it on a clone: python"
@@ -782,9 +925,22 @@ def _public(result: subprocess.CompletedProcess, pinned: str) -> list[str]:
     lines = result.stdout.splitlines()
     for line in lines:
         assert any(re.fullmatch(p, line) for p in PUBLIC_LINES), line
-    for sha in re.findall(r"[0-9a-f]{7,}", result.stdout):
+    # A whole word: "feedback" (feedback-delegate.json, sync_feedback_delegates.py)
+    # holds the hex run "feedbac". Every commit PUBLIC_LINES lets through sits
+    # between spaces or parentheses.
+    for sha in re.findall(r"\b[0-9a-f]{7,}\b", result.stdout):
         assert pinned.startswith(sha), f"{sha} is not SOURCE's commit"
     return lines
+
+
+def test_public_lines_name_a_commit_only_as_a_whole_word():
+    """The guard above reads a commit as a whole word, so a commit glued to
+    a word would slip it: PUBLIC_LINES must not let one through."""
+    for line in (
+        "OK — vendor/em/ is exactly what SOURCE's commit (x0123456789ab) yields",
+        "OK — vendor/em/ is exactly what SOURCE's commit (0123456789abx) yields",
+    ):
+        assert not any(re.fullmatch(p, line) for p in PUBLIC_LINES), line
 
 
 def test_public_log_names_the_drift_not_the_commit_nor_its_data(

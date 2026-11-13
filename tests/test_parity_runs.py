@@ -5,9 +5,11 @@ unless the checkout sat next to Execution Market's ``mcp_server/``, and 32
 tests of ``tests/test_retry.py`` unless it sat next to EM's ``sdk/python`` and
 ``cli/src``: in this repository's own CI, which checks out the SDK alone, they
 never ran. Now they compare the SDK against the vendored EM data
-(``vendor/em/``), with no skip. This file keeps both halves of that true. It
-runs the three modules with pytest, as a process, in a copy of what they read
-with nothing next to it (what CI checks out):
+(``vendor/em/``), with no skip; so does ``tests/test_feedback_delegates_sync.py``,
+which holds the SDK's pinned FeedbackDelegate table to EM's record. This file
+keeps both halves of that true. It runs the parity modules with pytest, as a
+process, in a copy of what they read with nothing next to it (what CI checks
+out):
 
   - unchanged, every parity test runs and passes: none skipped, xfailed,
     deselected or gone;
@@ -51,6 +53,10 @@ PARITY_TESTS = {
         "test_plugin_sdk_tx_hash_guard": 5,
         "test_plugin_sdk_5xx_without_tx_hash_still_retries": 1,
         "test_plugin_sdk_idempotency_key_persists_signature_regenerates": 1,
+    },
+    "test_feedback_delegates_sync": {
+        "test_feedback_delegates_match_the_deployment_record": 1,
+        "test_each_pinned_chain_resolves_to_its_row": 1,
     },
 }
 
@@ -205,6 +211,21 @@ def _a_retry_status_flips_upstream(root: Path) -> None:
     _edit_json(root / "vendor" / "em" / "retry.json", change)
 
 
+def _a_delegate_is_redeployed_upstream(root: Path) -> None:
+    def change(delegates):
+        row = next(iter(delegates.values()))
+        row["address"] = "0x" + "cC" * 20
+
+    _edit_json(root / "vendor" / "em" / "feedback-delegate.json", change)
+
+
+def _a_delegate_chain_is_added_upstream(root: Path) -> None:
+    def change(delegates):
+        delegates["drifted"] = {"chain_id": 999999999, "address": "0x" + "dD" * 20}
+
+    _edit_json(root / "vendor" / "em" / "feedback-delegate.json", change)
+
+
 def _the_sdk_regions_are_edited_by_hand(root: Path) -> None:
     _edit_region(
         root / "uvd_em_sdk" / "networks.py",
@@ -217,6 +238,12 @@ def _the_sdk_regions_are_edited_by_hand(root: Path) -> None:
         "# --- BEGIN GENERATED: ENUMS",
         r'^(    [A-Z_]+ = ")([a-z_]+)"$',
         r'\1\2_edited"',
+    )
+    _edit_region(
+        root / "uvd_em_sdk" / "feedback_delegate.py",
+        "# --- BEGIN GENERATED: FEEDBACK DELEGATES",
+        r'address="0x([0-9a-fA-F]{40})",',
+        lambda m: f'address="0x{m[1][:-1]}{"1" if m[1][-1] == "0" else "0"}",',
     )
 
 
@@ -248,11 +275,27 @@ def _the_sdk_regions_are_edited_by_hand(root: Path) -> None:
             id="vendor-em-a-retry-status-flips",
         ),
         pytest.param(
+            (_a_delegate_is_redeployed_upstream,),
+            {
+                "test_feedback_delegates_sync::test_feedback_delegates_match_the_deployment_record"
+            },
+            id="vendor-em-a-delegate-is-redeployed",
+        ),
+        pytest.param(
+            (_a_delegate_chain_is_added_upstream,),
+            {
+                "test_feedback_delegates_sync::test_feedback_delegates_match_the_deployment_record",
+                "test_feedback_delegates_sync::test_each_pinned_chain_resolves_to_its_row",
+            },
+            id="vendor-em-a-delegate-chain-is-added",
+        ),
+        pytest.param(
             (_the_sdk_regions_are_edited_by_hand,),
             {
                 "test_networks_sync::test_networks_matches_backend",
                 "test_enums_sync::test_enums_match_backend",
                 "test_enums_sync::test_generated_region_matches_renderer",
+                "test_feedback_delegates_sync::test_feedback_delegates_match_the_deployment_record",
             },
             id="sdk-generated-regions-edited-by-hand",
         ),

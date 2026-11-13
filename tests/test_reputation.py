@@ -486,6 +486,59 @@ PREPARED = {
     "delegated": True,
 }
 
+#: The v4 FeedbackDelegate on Base, written here by hand on purpose: the
+#: parity test holds the table to the vendored record, this one holds it to
+#: the contract the record's v4 test vector names on Base.
+BASE_V4 = "0x260D3D0258680aA458D0EBB8BcAE8A2f68bf6163"
+
+#: A first rating on Base: the account is not delegated there yet.
+FIRST_RATING = {
+    **PREPARED,
+    "delegated": False,
+    "delegate": BASE_V4,
+    "chain_id": 8453,
+    "account_nonce": 7,
+    "delegation_notice": (
+        "Sending this rating also delegates your account "
+        f"{PREPARED['rater_wallet']} (EIP-7702) on base (chain 8453) to the "
+        f"FeedbackDelegate contract {BASE_V4}"
+    ),
+}
+
+AUTH = {
+    "chainId": 8453,
+    "address": BASE_V4,
+    "nonce": 7,
+    "yParity": 1,
+    "r": "0x" + "aa" * 32,
+    "s": "0x" + "bb" * 32,
+}
+
+SIG = "0x" + "22" * 65
+
+#: What submit sends for PREPARED with SIG: the caller's three fields, the
+#: signature, and the prepared fields echoed verbatim. Nothing else of
+#: ``prepared`` (digest, delegated, delegate, chain_id, account_nonce,
+#: delegation_notice) travels.
+ECHOED = {
+    "task_id": "task-1",
+    "direction": "publisher_rates_executor",
+    "score": 95,
+    "signature": SIG,
+    "network": "base",
+    "ratee_agent_id": 2106,
+    "rater_wallet": PREPARED["rater_wallet"],
+    "deadline": 1787600000,
+    "nonce": "0x" + "cd" * 32,
+    "tag1": "buyer_rating:research",
+    "tag2": "0x857fe615",
+    "endpoint": "task:task-1",
+    "feedback_uri": "https://execution.market/feedback/x.json",
+    "feedback_hash": "0x" + "ef" * 32,
+}
+
+FOREIGN = "0x" + "66" * 20
+
 
 class TestRelayedRating:
     """The rating carries the rater's name, and the SDK never holds their key."""
@@ -551,23 +604,15 @@ class TestRelayedRating:
         )
         assert "authorization" not in json.loads(route.calls.last.request.content)
 
-        auth = {
-            "chainId": 8453,
-            "address": "0xa7ca33CaE3c5890F25DfD08079DB82701C9deBc6",
-            "nonce": 7,
-            "yParity": 1,
-            "r": "0x" + "aa" * 32,
-            "s": "0x" + "bb" * 32,
-        }
         await client.reputation.submit_relayed_rating(
-            PREPARED,
+            FIRST_RATING,
             "0xsig",
             task_id="t",
             direction="publisher_rates_executor",
             score=80,
-            authorization=auth,
+            authorization=AUTH,
         )
-        assert json.loads(route.calls.last.request.content)["authorization"] == auth
+        assert json.loads(route.calls.last.request.content)["authorization"] == AUTH
 
     def test_the_sdk_never_takes_a_private_key(self):
         """Load-bearing. The point of this rail is that only the rater can sign.
@@ -586,3 +631,429 @@ class TestRelayedRating:
             ).parameters:
                 assert "key" not in param.lower(), f"{name} accepts {param}"
                 assert "secret" not in param.lower(), f"{name} accepts {param}"
+
+
+# ---------------------------------------------------------------------------
+# The EIP-7702 authorization: pinned delegate, and the owner said yes
+# ---------------------------------------------------------------------------
+
+
+def _submit_route(mock_router):
+    return mock_router.post("/reputation/relay/submit").mock(
+        return_value=httpx.Response(
+            200, json={"success": True, "authored_by": PREPARED["rater_wallet"]}
+        )
+    )
+
+
+async def _submit(client, prepared=FIRST_RATING, **kwargs):
+    return await client.reputation.submit_relayed_rating(
+        prepared,
+        SIG,
+        task_id="task-1",
+        direction="publisher_rates_executor",
+        score=95,
+        **kwargs,
+    )
+
+
+class TestRelayedRatingDelegation:
+    """Signing an EIP-7702 authorization hands the named contract the power to
+    act as the account. The SDK lets one out only for the FeedbackDelegate it
+    pins on that chain, and says the owner accepted only when told so."""
+
+    @pytest.fixture
+    def mock_router(self):
+        # The refusals assert the route was NOT called; respx's default
+        # teardown check (every route called) would contradict them.
+        with respx.mock(base_url=BASE, assert_all_called=False) as router:
+            yield router
+
+    async def test_the_body_without_an_authorization_is_exact(
+        self, mock_router, client
+    ):
+        route = _submit_route(mock_router)
+
+        await _submit(client, PREPARED)
+
+        assert json.loads(route.calls.last.request.content) == ECHOED
+
+    async def test_the_body_with_an_acknowledged_authorization_is_exact(
+        self, mock_router, client
+    ):
+        route = _submit_route(mock_router)
+
+        await _submit(client, authorization=AUTH, delegation_acknowledged=True)
+
+        assert json.loads(route.calls.last.request.content) == {
+            **ECHOED,
+            "authorization": AUTH,
+            "delegation_acknowledged": True,
+        }
+
+    async def test_an_authorization_alone_does_not_say_the_owner_accepted(
+        self, mock_router, client
+    ):
+        """Default False: the field is left out, and EM decides (a backend that
+        requires it answers 422; an older one ignores the field)."""
+        route = _submit_route(mock_router)
+
+        await _submit(client, authorization=AUTH)
+
+        assert json.loads(route.calls.last.request.content) == {
+            **ECHOED,
+            "authorization": AUTH,
+        }
+
+    @pytest.mark.parametrize(
+        "prepared", [PREPARED, FIRST_RATING], ids=["delegated", "first"]
+    )
+    async def test_delegation_acknowledged_never_travels_without_an_authorization(
+        self, mock_router, client, prepared
+    ):
+        route = _submit_route(mock_router)
+
+        await _submit(client, prepared, delegation_acknowledged=True)
+
+        assert json.loads(route.calls.last.request.content) == ECHOED
+
+    @pytest.mark.parametrize("said", [1, "true", "yes", [True]])
+    async def test_only_true_itself_acknowledges(self, mock_router, client, said):
+        """EM takes the JSON literal true (StrictBool): a truthy stand-in is
+        not the owner's yes, and is not turned into one here."""
+        route = _submit_route(mock_router)
+
+        await _submit(client, authorization=AUTH, delegation_acknowledged=said)
+
+        body = json.loads(route.calls.last.request.content)
+        assert "delegation_acknowledged" not in body
+        assert body["authorization"] == AUTH
+
+    def test_delegation_acknowledged_is_keyword_only_and_false_by_default(self):
+        import inspect
+
+        from uvd_em_sdk.resources.reputation import ReputationResource
+
+        param = inspect.signature(ReputationResource.submit_relayed_rating).parameters[
+            "delegation_acknowledged"
+        ]
+        assert param.kind is inspect.Parameter.KEYWORD_ONLY
+        assert param.default is False
+
+    @pytest.mark.parametrize(
+        "change, code",
+        [
+            pytest.param({"delegate": FOREIGN}, "delegate_not_pinned", id="foreign"),
+            pytest.param(
+                # The v4 delegate of Ethereum, offered for a rating on Base.
+                {"delegate": "0x9577F05D10D2052C75D115e3a0A8f9Dc0cBb7A7b"},
+                "delegate_not_pinned",
+                id="another-chains-delegate",
+            ),
+            pytest.param({"delegate": None}, "delegate_not_pinned", id="no-delegate"),
+            pytest.param(
+                {"delegate": "0X" + BASE_V4[2:]}, "delegate_not_pinned", id="0X-prefix"
+            ),
+            pytest.param(
+                {"delegate": " " + BASE_V4}, "delegate_not_pinned", id="padded"
+            ),
+            pytest.param(
+                {"delegate": BASE_V4[2:]}, "delegate_not_pinned", id="no-prefix"
+            ),
+            pytest.param({"chain_id": 0}, "chain_id_invalid", id="prepared-chain-0"),
+            pytest.param(
+                {"chain_id": None}, "chain_id_invalid", id="prepared-chain-none"
+            ),
+            pytest.param({"chain_id": -8453}, "chain_id_invalid", id="negative"),
+            pytest.param({"chain_id": "8453"}, "chain_id_invalid", id="a-string"),
+            pytest.param({"chain_id": 8453.0}, "chain_id_invalid", id="a-float"),
+            pytest.param({"chain_id": 43114}, "chain_not_pinned", id="avalanche"),
+            pytest.param(
+                {"network": "ethereum"},
+                "network_mismatch",
+                id="network-of-another-chain",
+            ),
+        ],
+    )
+    async def test_a_prepare_the_sdk_does_not_pin_sends_nothing(
+        self, mock_router, client, change, code
+    ):
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        route = _submit_route(mock_router)
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(
+                client,
+                {**FIRST_RATING, **change},
+                authorization=AUTH,
+                delegation_acknowledged=True,
+            )
+
+        assert exc.value.code == code
+        assert not route.called
+
+    async def test_a_prepare_without_a_chain_id_sends_nothing(
+        self, mock_router, client
+    ):
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        route = _submit_route(mock_router)
+        prepared = {k: v for k, v in FIRST_RATING.items() if k != "chain_id"}
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, prepared, authorization=AUTH)
+
+        assert exc.value.code == "chain_id_invalid"
+        assert not route.called
+
+    async def test_true_is_not_chain_1(self, mock_router, client):
+        """``True == 1`` in Python, and 1 is Ethereum: neither the prepare nor
+        the authorization may pass a bool for a chain id."""
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        ethereum = FEEDBACK_DELEGATES_BY_NAME()["ethereum"]
+        route = _submit_route(mock_router)
+        prepared = {
+            **FIRST_RATING,
+            "network": "ethereum",
+            "chain_id": 1,
+            "delegate": ethereum.address,
+        }
+        auth = {**AUTH, "chainId": 1, "address": ethereum.address}
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, {**prepared, "chain_id": True}, authorization=auth)
+        assert exc.value.code == "chain_id_invalid"
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, prepared, authorization={**auth, "chainId": True})
+        assert exc.value.code == "authorization_wrong_chain"
+        assert not route.called
+
+        await _submit(client, prepared, authorization=auth)  # the real one goes
+        assert route.call_count == 1
+
+    @pytest.mark.parametrize(
+        "change, code",
+        [
+            pytest.param({"chainId": 0}, "authorization_wrong_chain", id="chainId-0"),
+            pytest.param(
+                {"chainId": 1}, "authorization_wrong_chain", id="another-chain"
+            ),
+            pytest.param(
+                {"chainId": "8453"}, "authorization_wrong_chain", id="a-string"
+            ),
+            pytest.param(
+                {"chainId": 8453.0}, "authorization_wrong_chain", id="a-float"
+            ),
+            pytest.param({"chainId": None}, "authorization_wrong_chain", id="none"),
+            pytest.param(
+                {"address": FOREIGN}, "authorization_wrong_delegate", id="foreign"
+            ),
+            pytest.param(
+                {"address": "0X" + BASE_V4[2:]},
+                "authorization_wrong_delegate",
+                id="0X-prefix",
+            ),
+            pytest.param(
+                {"address": BASE_V4 + "\n"},
+                "authorization_wrong_delegate",
+                id="trailing-newline",
+            ),
+            pytest.param(
+                {"address": None}, "authorization_wrong_delegate", id="no-address"
+            ),
+        ],
+    )
+    async def test_an_authorization_for_another_chain_or_contract_sends_nothing(
+        self, mock_router, client, change, code
+    ):
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        route = _submit_route(mock_router)
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(
+                client, authorization={**AUTH, **change}, delegation_acknowledged=True
+            )
+
+        assert exc.value.code == code
+        assert exc.value.status_code is None  # nothing reached the server
+        assert not route.called
+
+    async def test_an_authorization_without_chain_id_sends_nothing(
+        self, mock_router, client
+    ):
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        route = _submit_route(mock_router)
+        auth = {k: v for k, v in AUTH.items() if k != "chainId"}
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, authorization=auth, delegation_acknowledged=True)
+
+        assert exc.value.code == "authorization_wrong_chain"
+        assert not route.called
+
+    @pytest.mark.parametrize("authorization", [[("chainId", 8453)], "0xsigned"])
+    async def test_an_authorization_that_is_not_a_mapping_sends_nothing(
+        self, mock_router, client, authorization
+    ):
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        route = _submit_route(mock_router)
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, authorization=authorization)
+
+        assert exc.value.code == "authorization_invalid"
+        assert not route.called
+
+    @pytest.mark.parametrize(
+        "spelling",
+        [BASE_V4.lower(), "0x" + BASE_V4[2:].upper()],
+        ids=["lower", "upper"],
+    )
+    async def test_the_address_is_compared_without_case(
+        self, mock_router, client, spelling
+    ):
+        route = _submit_route(mock_router)
+
+        await _submit(
+            client,
+            {**FIRST_RATING, "delegate": spelling},
+            authorization={**AUTH, "address": spelling},
+            delegation_acknowledged=True,
+        )
+
+        body = json.loads(route.calls.last.request.content)
+        assert body["authorization"]["address"] == spelling  # sent as signed
+        assert body["delegation_acknowledged"] is True
+
+    async def test_without_an_authorization_nothing_is_checked(
+        self, mock_router, client
+    ):
+        """An account already delegated (every rating after the first on a
+        chain) sends no authorization: there is no delegation to check, and EM
+        does not touch such a submit either."""
+        route = _submit_route(mock_router)
+
+        await _submit(client, {**PREPARED, "delegate": FOREIGN, "chain_id": 0})
+
+        assert route.called
+
+    async def test_ems_422_is_raised_with_its_code(self, mock_router, client):
+        """EM refuses an authorization the owner did not accept. Nothing was
+        sent on-chain; the code says what to do."""
+        from uvd_em_sdk import EMValidationError
+
+        mock_router.post("/reputation/relay/submit").mock(
+            return_value=httpx.Response(
+                422,
+                json={
+                    "detail": {
+                        "code": "relay_delegation_not_acknowledged",
+                        "retryable": False,
+                        "message": "Show `delegation_notice` to the owner.",
+                        "network": "base",
+                        "chain_id": 8453,
+                        "delegate": BASE_V4,
+                        "next_step": (
+                            "POST /api/v1/reputation/relay/submit with this same "
+                            "body plus delegation_acknowledged: true"
+                        ),
+                    }
+                },
+            )
+        )
+
+        with pytest.raises(EMValidationError) as exc:
+            await _submit(client, authorization=AUTH)
+
+        assert exc.value.status_code == 422
+        assert exc.value.details["detail"]["code"] == (
+            "relay_delegation_not_acknowledged"
+        )
+        assert exc.value.details["detail"]["delegate"] == BASE_V4
+
+
+def FEEDBACK_DELEGATES_BY_NAME():
+    from uvd_em_sdk import FEEDBACK_DELEGATES
+
+    return FEEDBACK_DELEGATES
+
+
+class TestVerifyFeedbackDelegate:
+    """The check a caller runs BEFORE signing the authorization."""
+
+    def test_base_pins_the_v4_delegate(self):
+        from uvd_em_sdk import FeedbackDelegate, get_feedback_delegate
+
+        assert get_feedback_delegate(8453) == FeedbackDelegate("base", 8453, BASE_V4)
+        assert get_feedback_delegate(True) is None  # not Ethereum
+        assert get_feedback_delegate(0) is None
+
+    def test_it_returns_what_to_sign_over(self):
+        from uvd_em_sdk import verify_feedback_delegate
+
+        pinned = verify_feedback_delegate(FIRST_RATING)
+
+        assert (pinned.chain_id, pinned.address) == (8453, BASE_V4)
+
+    @pytest.mark.parametrize("network", list(FEEDBACK_DELEGATES_BY_NAME()))
+    def test_every_pinned_network_verifies(self, network):
+        from uvd_em_sdk import verify_feedback_delegate
+
+        d = FEEDBACK_DELEGATES_BY_NAME()[network]
+        prepared = {"network": network, "chain_id": d.chain_id, "delegate": d.address}
+        auth = {**AUTH, "chainId": d.chain_id, "address": d.address}
+
+        assert verify_feedback_delegate(prepared, auth) == d
+
+    def test_the_comparison_is_by_chain_and_address(self):
+        """Optimism and Monad share an address (same deployer, same nonce):
+        it verifies on both. Base's address does not verify on Optimism."""
+        from uvd_em_sdk import EMDelegateNotPinnedError, verify_feedback_delegate
+
+        table = FEEDBACK_DELEGATES_BY_NAME()
+        assert table["optimism"].address == table["monad"].address
+        for network in ("optimism", "monad"):
+            d = table[network]
+            prepared = {
+                "network": network,
+                "chain_id": d.chain_id,
+                "delegate": d.address,
+            }
+            assert verify_feedback_delegate(prepared) == d
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            verify_feedback_delegate(
+                {"network": "optimism", "chain_id": 10, "delegate": BASE_V4}
+            )
+        assert exc.value.code == "delegate_not_pinned"
+
+    def test_the_network_is_checked_only_when_present(self):
+        from uvd_em_sdk import verify_feedback_delegate
+
+        assert verify_feedback_delegate({"chain_id": 8453, "delegate": BASE_V4})
+
+    def test_the_refusal_is_an_em_error_that_names_what_it_compared(self):
+        from uvd_em_sdk import (
+            EMDelegateNotPinnedError,
+            EMError,
+            verify_feedback_delegate,
+        )
+
+        with pytest.raises(EMError) as exc:
+            verify_feedback_delegate(FIRST_RATING, {**AUTH, "address": FOREIGN})
+
+        assert isinstance(exc.value, EMDelegateNotPinnedError)
+        assert exc.value.code == "authorization_wrong_delegate"
+        assert exc.value.details == {
+            "chain_id": 8453,
+            "network": "base",
+            "authorization_address": FOREIGN,
+            "pinned_delegate": BASE_V4,
+        }
+        assert BASE_V4 in exc.value.message and FOREIGN in exc.value.message
