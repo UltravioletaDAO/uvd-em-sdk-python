@@ -1146,6 +1146,12 @@ class TestAuthorizationSigner:
             pytest.param({**AUTH, "s": "0x" + "ff" * 32}, id="s-out-of-range"),
             pytest.param({**AUTH, "nonce": -1}, id="nonce-negative"),
             pytest.param({**AUTH, "nonce": 2**64}, id="nonce-over-uint64"),
+            # Signed by the rater, but over a nonce no chain accepts (EIP-7702
+            # nonces are uint64) or one the dict writes as a bool.
+            pytest.param(_signed(8453, BASE_V4, nonce=2**64), id="signed-nonce-2**64"),
+            pytest.param(
+                {**_signed(8453, BASE_V4, nonce=1), "nonce": True}, id="nonce-true"
+            ),
             pytest.param({**AUTH, "nonce": "7"}, id="nonce-decimal-string"),
             pytest.param(
                 {k: v for k, v in AUTH.items() if k not in ("r", "s")}, id="unsigned"
