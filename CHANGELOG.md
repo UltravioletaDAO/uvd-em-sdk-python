@@ -59,12 +59,17 @@ Execution Market's backend is set to require with an authorization.
   reads the body a delegation valid on every chain. Addresses are compared
   without case and must be written `0x` and 40 hex digits; `chain_id` and
   `y_parity` are read when `chainId` and `yParity` are absent, as Execution
-  Market reads them. A mismatch raises `EMDelegateNotPinnedError` and no
-  request is made. What is sent is the authorization as JSON writes it, the
-  same plain copy that was checked. This refuses a submit that 0.10.0 sent:
-  an authorization with a hand-built `prepared` that lacks `chain_id`,
-  `delegate` or `rater_wallet`, for a delegate the table does not name, or
-  whose signature is not the rater's over those values. A delegate Execution
+  Market reads them. `nonce` and `yParity` must be ints and `r` and `s` 0x-hex
+  strings (Execution Market's model takes them so), with a nonce below
+  2**64 - 1, `yParity` 0 or 1 and `s` in the lower half of the curve order
+  (what EIP-7702 chains execute). A mismatch raises `EMDelegateNotPinnedError`
+  and no request is made. What is sent is the authorization as JSON writes it
+  (NaN and Infinity refused), the same plain copy that was checked. This
+  refuses a submit that 0.10.0 sent: an authorization with a hand-built
+  `prepared` that lacks `chain_id`, `delegate` or `rater_wallet`, for a
+  delegate the table does not name, whose signature is not the rater's over
+  those values, or with a decimal-string `nonce` or a bool `yParity`, which
+  Execution Market's model accepted. A delegate Execution
   Market deploys later is refused until a release carries it. Without an
   `authorization` nothing is checked. The signature is recovered with
   `eth-keys`, `rlp` and `eth-utils`, which `eth-account` (required through
@@ -91,10 +96,11 @@ Execution Market's backend is set to require with an authorization.
 - `tests/test_reputation.py`: the exact body with and without an
   authorization; `delegation_acknowledged` never sent without an authorization
   nor for a truthy value that is not `True`; a foreign delegate, another
-  chain, chain id 0, absent or a bool, a malformed address, and a signature
-  that is not the rater's over the values the dict carries (signed for chain
-  0, another key, nonce or address, malformed `r`/`s`/`yParity`) refused
-  with no request; EM's 422 raised with its code. The authorization fixture
+  chain, chain id 0, absent or a bool, a malformed address, a signature that
+  is not the rater's over the values the dict carries (signed for chain 0,
+  another key, nonce or address), and one in a shape Execution Market or the
+  chain refuses (int `r`/`s`, string `nonce`/`yParity`, high `s`, a nonce of
+  2**64 - 1) refused with no request; EM's 422 raised with its code. The authorization fixture
   is a known answer from eth-account's `Account.sign_authorization` with a
   throwaway key.
 - `tests/test_feedback_delegates_sync.py` holds the table to

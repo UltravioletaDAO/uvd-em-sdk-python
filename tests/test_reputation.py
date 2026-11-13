@@ -547,6 +547,18 @@ def _signed(chain_id, address, nonce=7, key=RATER_KEY, **fields):
     }
 
 
+SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+
+
+def _high_s(auth):
+    """The same signature with s in the upper half of the curve order."""
+    return {
+        **auth,
+        "s": hex(SECP256K1_N - int(auth["s"], 16)),
+        "yParity": 1 - auth["yParity"],
+    }
+
+
 SIG = "0x" + "22" * 65
 
 #: What submit sends for PREPARED with SIG: the caller's three fields, the
@@ -1138,24 +1150,6 @@ class TestAuthorizationSigner:
                 _signed(8453, BASE_V4, key=bytes.fromhex("22" * 32)), id="another-key"
             ),
             pytest.param({**AUTH, "yParity": 1 - AUTH["yParity"]}, id="flipped-parity"),
-            pytest.param({**AUTH, "yParity": 2}, id="parity-2"),
-            pytest.param({**AUTH, "yParity": True}, id="parity-bool"),
-            pytest.param({**AUTH, "r": "nope"}, id="r-not-hex"),
-            pytest.param({**AUTH, "s": None}, id="s-none"),
-            pytest.param({**AUTH, "r": "0x0"}, id="r-zero"),
-            pytest.param({**AUTH, "s": "0x" + "ff" * 32}, id="s-out-of-range"),
-            pytest.param({**AUTH, "nonce": -1}, id="nonce-negative"),
-            pytest.param({**AUTH, "nonce": 2**64}, id="nonce-over-uint64"),
-            # Signed by the rater, but over a nonce no chain accepts (EIP-7702
-            # nonces are uint64) or one the dict writes as a bool.
-            pytest.param(_signed(8453, BASE_V4, nonce=2**64), id="signed-nonce-2**64"),
-            pytest.param(
-                {**_signed(8453, BASE_V4, nonce=1), "nonce": True}, id="nonce-true"
-            ),
-            pytest.param({**AUTH, "nonce": "7"}, id="nonce-decimal-string"),
-            pytest.param(
-                {k: v for k, v in AUTH.items() if k not in ("r", "s")}, id="unsigned"
-            ),
         ],
     )
     async def test_an_authorization_the_rater_did_not_sign_sends_nothing(
@@ -1170,6 +1164,62 @@ class TestAuthorizationSigner:
 
         assert exc.value.code == "authorization_wrong_signer"
         assert not route.called
+
+    @pytest.mark.parametrize(
+        "auth",
+        [
+            pytest.param({**AUTH, "yParity": 2}, id="parity-2"),
+            pytest.param({**AUTH, "yParity": True}, id="parity-bool"),
+            pytest.param({**AUTH, "yParity": "0x1"}, id="parity-hex-string"),
+            pytest.param({**AUTH, "r": "nope"}, id="r-not-hex"),
+            pytest.param({**AUTH, "s": None}, id="s-none"),
+            pytest.param({**AUTH, "r": "0x0"}, id="r-zero"),
+            pytest.param({**AUTH, "r": hex(SECP256K1_N)}, id="r-at-the-order"),
+            pytest.param({**AUTH, "s": "0x" + "ff" * 32}, id="s-out-of-range"),
+            # EIP-2: the same signature with s flipped to the upper half
+            # recovers to the same rater, and every chain skips it.
+            pytest.param(_high_s(AUTH), id="high-s"),
+            # Execution Market's model takes r and s as strings.
+            pytest.param(
+                {**AUTH, "r": int(AUTH["r"], 16), "s": int(AUTH["s"], 16)},
+                id="r-s-ints",
+            ),
+            pytest.param({**AUTH, "nonce": -1}, id="nonce-negative"),
+            pytest.param({**AUTH, "nonce": 2**64}, id="nonce-over-uint64"),
+            # Signed by the rater, but over a nonce no chain executes (EIP-7702:
+            # below 2**64 - 1), or one the dict writes as a bool.
+            pytest.param(_signed(8453, BASE_V4, nonce=2**64), id="signed-nonce-2**64"),
+            pytest.param(
+                _signed(8453, BASE_V4, nonce=2**64 - 1), id="signed-nonce-2**64-1"
+            ),
+            pytest.param(
+                {**_signed(8453, BASE_V4, nonce=1), "nonce": True}, id="nonce-true"
+            ),
+            pytest.param({**AUTH, "nonce": "7"}, id="nonce-decimal-string"),
+            pytest.param({**AUTH, "nonce": "0x7"}, id="nonce-hex-string"),
+            pytest.param(
+                {k: v for k, v in AUTH.items() if k not in ("r", "s")}, id="unsigned"
+            ),
+        ],
+    )
+    async def test_an_authorization_in_a_shape_em_or_the_chain_refuses_sends_nothing(
+        self, mock_router, client, auth
+    ):
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        route = _submit_route(mock_router)
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, authorization=auth, delegation_acknowledged=True)
+
+        assert exc.value.code == "authorization_invalid"
+        assert not route.called
+
+    def test_the_nonce_just_below_the_bound_verifies(self):
+        from uvd_em_sdk import verify_feedback_delegate
+
+        auth = _signed(8453, BASE_V4, nonce=2**64 - 2)
+        assert verify_feedback_delegate(FIRST_RATING, auth).address == BASE_V4
 
     @pytest.mark.parametrize(
         "rater", [None, FOREIGN, RATER[2:], "0X" + RATER[2:]], ids=str
@@ -1190,13 +1240,53 @@ class TestAuthorizationSigner:
                 {**FIRST_RATING, "rater_wallet": rater}, AUTH
             )
 
-    def test_hex_and_int_spellings_of_the_signature_verify(self):
+    def test_hex_spellings_of_r_and_s_verify(self):
+        """Upper-case digits and no zero padding: still the same numbers."""
         from uvd_em_sdk import verify_feedback_delegate
 
-        as_ints = {**AUTH, "r": int(AUTH["r"], 16), "s": int(AUTH["s"], 16)}
-        as_hex_parity = {**AUTH, "yParity": hex(AUTH["yParity"])}
-        assert verify_feedback_delegate(FIRST_RATING, as_ints)
-        assert verify_feedback_delegate(FIRST_RATING, as_hex_parity)
+        upper = {
+            **AUTH,
+            "r": "0x" + AUTH["r"][2:].upper(),
+            "s": "0x" + AUTH["s"][2:].upper(),
+        }
+        unpadded = {**AUTH, "r": hex(int(AUTH["r"], 16)), "s": hex(int(AUTH["s"], 16))}
+        assert verify_feedback_delegate(FIRST_RATING, upper)
+        assert verify_feedback_delegate(FIRST_RATING, unpadded)
+
+    async def test_a_str_whose_lower_lies_is_not_an_address(self, mock_router, client):
+        """The rater signed a delegation to FOREIGN, and the dict's address is
+        a ``str`` subclass whose ``lower`` says the pinned delegate. Refused by
+        the public check, and by submit, which checks the JSON copy."""
+        from uvd_em_sdk import EMDelegateNotPinnedError, verify_feedback_delegate
+
+        class Lying(str):
+            def lower(self):
+                return BASE_V4.lower()
+
+        auth = {**_signed(8453, FOREIGN), "address": Lying(FOREIGN)}
+        route = _submit_route(mock_router)
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            verify_feedback_delegate(FIRST_RATING, auth)
+        assert exc.value.code == "authorization_wrong_delegate"
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, authorization=auth)
+        assert exc.value.code == "authorization_wrong_delegate"
+        assert not route.called
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf")], ids=str)
+    async def test_nan_and_infinity_are_refused_typed(self, mock_router, client, value):
+        """httpx refuses them too, but untyped: the copy refuses them first."""
+        from uvd_em_sdk import EMDelegateNotPinnedError
+
+        route = _submit_route(mock_router)
+
+        with pytest.raises(EMDelegateNotPinnedError) as exc:
+            await _submit(client, authorization={**AUTH, "extra": value})
+
+        assert exc.value.code == "authorization_invalid"
+        assert not route.called
 
     async def test_snake_case_keys_are_read_as_execution_market_reads_them(
         self, mock_router, client

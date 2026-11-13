@@ -40,11 +40,14 @@ from .exceptions import EMDelegateNotPinnedError
 #: An EVM address as compared here: ``0x`` (lower-case x) and 40 hex digits,
 #: nothing around it. Execution Market refuses a ``0X`` prefix the same way.
 _EVM_ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
-#: An unsigned integer written as hex, the way wallets write ``r`` and ``s``.
+#: ``r`` and ``s`` as Execution Market's model takes them: hex strings.
 _HEX_UINT = re.compile(r"0x[0-9a-fA-F]{1,64}")
 #: EIP-7702's magic byte: an authorization signs keccak(MAGIC || rlp(...)).
 _SET_CODE_MAGIC = bytes([5])
-_MAX_UINT64 = 2**64 - 1
+#: EIP-7702: a chain skips an authorization whose nonce is 2**64 - 1 or more,
+#: or whose ``s`` is above half the secp256k1 order (EIP-2).
+_MAX_NONCE = 2**64 - 2
+_SECP256K1_N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 
 
 @dataclass(frozen=True)
@@ -132,17 +135,21 @@ def get_feedback_delegate(chain_id: int) -> FeedbackDelegate | None:
 
 
 def _address(value: Any) -> str | None:
-    """``value`` when it is an address written 0x and 40 hex digits, else None."""
-    if isinstance(value, str) and _EVM_ADDRESS.fullmatch(value):
+    """``value`` when it is a ``str`` (not a subclass, whose ``lower`` could
+    say anything) written 0x and 40 hex digits, else None."""
+    if type(value) is str and _EVM_ADDRESS.fullmatch(value):
         return value
     return None
 
 
-def _uint(value: Any) -> int | None:
-    """An ``int`` (not a bool) or a hex string, as a non-negative int; else None."""
-    if type(value) is int:
-        return value if value >= 0 else None
-    if isinstance(value, str) and _HEX_UINT.fullmatch(value):
+def _int(value: Any) -> int | None:
+    """``value`` when it is an ``int`` (not a bool), else None."""
+    return value if type(value) is int else None
+
+
+def _hex(value: Any) -> int | None:
+    """``value`` as an int when it is a ``str`` written 0x and hex digits."""
+    if type(value) is str and _HEX_UINT.fullmatch(value):
         return int(value, 16)
     return None
 
@@ -153,34 +160,46 @@ def _field(authorization: Mapping[str, Any], alias: str, name: str) -> Any:
     return authorization[alias] if alias in authorization else authorization.get(name)
 
 
+def _signature_fields(
+    authorization: Mapping[str, Any],
+) -> tuple[int, int, int, int] | None:
+    """``(nonce, y_parity, r, s)`` when they are what Execution Market's model
+    takes (``nonce`` and ``yParity`` ints, ``r`` and ``s`` hex strings) and
+    what a chain executes (nonce below 2**64 - 1, ``yParity`` 0 or 1, ``r`` in
+    the curve order, ``s`` in its lower half); else None."""
+    nonce = _int(authorization.get("nonce"))
+    y_parity = _int(_field(authorization, "yParity", "y_parity"))
+    r = _hex(authorization.get("r"))
+    s = _hex(authorization.get("s"))
+    if nonce is None or not 0 <= nonce <= _MAX_NONCE or y_parity not in (0, 1):
+        return None
+    if r is None or s is None or not 0 < r < _SECP256K1_N:
+        return None
+    if not 0 < s <= _SECP256K1_N // 2:
+        return None
+    return nonce, y_parity, r, s
+
+
 def _authority(
-    chain_id: int, address: str, authorization: Mapping[str, Any]
+    chain_id: int, address: str, fields: tuple[int, int, int, int]
 ) -> str | None:
     """The account whose key signed ``(chain_id, address, nonce)``, or None.
 
     EIP-7702: the signature is over ``keccak(0x05 || rlp([chain_id, address,
-    nonce]))``. None when ``nonce``, ``yParity``, ``r`` or ``s`` is missing or
-    malformed, or nothing recovers.
+    nonce]))``.
     """
     import rlp
     from eth_keys import keys
     from eth_utils import keccak
 
-    nonce = _uint(authorization.get("nonce"))
-    y_parity = _uint(_field(authorization, "yParity", "y_parity"))
-    r = _uint(authorization.get("r"))
-    s = _uint(authorization.get("s"))
-    if nonce is None or nonce > _MAX_UINT64 or y_parity not in (0, 1):
-        return None
-    if not r or not s:
-        return None
+    nonce, y_parity, r, s = fields
     preimage = rlp.encode([chain_id, bytes.fromhex(address[2:]), nonce])
     try:
         signature = keys.Signature(vrs=(y_parity, r, s))
         public_key = signature.recover_public_key_from_msg_hash(
             keccak(_SET_CODE_MAGIC + preimage)
         )
-    except Exception:  # noqa: BLE001 — r or s out of range, or no point recovers
+    except Exception:  # noqa: BLE001 — no point on the curve recovers
         return None
     return public_key.to_checksum_address()
 
@@ -222,11 +241,15 @@ def verify_feedback_delegate(
       ``prepared["chain_id"]`` as an ``int`` (0 included).
     * ``authorization_wrong_delegate``: its ``address`` is not the pinned
       delegate (same comparison as above).
-    * ``authorization_wrong_signer``: its signature (``yParity``, ``r``,
-      ``s``) does not recover, over that ``chainId``, that ``address`` and
-      its ``nonce``, to ``prepared["rater_wallet"]``: a wallet that signed
-      other values (chainId 0, say) than the dict carries, another key, or
-      a missing or malformed field.
+    * ``authorization_invalid``: its ``nonce`` or ``yParity`` is not an
+      ``int``, its ``r`` or ``s`` not a 0x-hex string (Execution Market's
+      model refuses those), or a value no chain executes: a nonce of
+      2**64 - 1 or more, ``yParity`` other than 0 or 1, ``r`` outside the
+      curve order, ``s`` above its half (EIP-2).
+    * ``authorization_wrong_signer``: its signature does not recover, over
+      that ``chainId``, that ``address`` and its ``nonce``, to
+      ``prepared["rater_wallet"]``: a wallet that signed other values
+      (chainId 0, say) than the dict carries, or another key.
 
     No request is made: this is a local check.
     """
@@ -319,8 +342,23 @@ def verify_feedback_delegate(
                 "pinned_delegate": pinned.address,
             },
         )
+    fields = _signature_fields(authorization)
+    if fields is None:
+        raise EMDelegateNotPinnedError(
+            "authorization_invalid",
+            "the EIP-7702 authorization's nonce and yParity must be ints, and "
+            "its r and s 0x-hex strings, with a nonce below 2**64 - 1, yParity "
+            "0 or 1 and s in the lower half of the curve order: Execution "
+            "Market and the chain refuse anything else. Nothing was sent.",
+            {
+                "chain_id": chain_id,
+                "network": pinned.network,
+                "nonce": authorization.get("nonce"),
+                "y_parity": _field(authorization, "yParity", "y_parity"),
+            },
+        )
     rater = _address(prepared.get("rater_wallet"))
-    signer = _authority(chain_id, signed_address, authorization)
+    signer = _authority(chain_id, signed_address, fields)
     if rater is None or signer is None or signer.lower() != rater.lower():
         raise EMDelegateNotPinnedError(
             "authorization_wrong_signer",
@@ -348,7 +386,7 @@ def _checked_authorization(
     lies, is checked and sent as JSON writes it)."""
     if isinstance(authorization, Mapping):
         try:
-            authorization = json.loads(json.dumps(dict(authorization)))
+            authorization = json.loads(json.dumps(dict(authorization), allow_nan=False))
         except (TypeError, ValueError) as exc:
             raise EMDelegateNotPinnedError(
                 "authorization_invalid",

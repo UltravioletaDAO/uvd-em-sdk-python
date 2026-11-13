@@ -269,7 +269,9 @@ prep = await client.reputation.prepare_relayed_rating(
     **rating, comment="paid on time, clear spec"
 )
 # `prep["digest"]` already carries the EIP-191 envelope: sign it as a RAW
-# prehash, or personal_sign `prep["signing_payload"]` from a wallet. Not
+# prehash (eth-account's `Account.unsafe_sign_hash`). A browser wallet's
+# personal_sign over the 32 BYTES of `prep["signing_payload"]` lands on it too;
+# `WalletAdapter.sign_message` signs text and does not, and neither does
 # personal_sign over the digest (prepare_relayed_rating's docstring says why).
 signature = ...
 
@@ -288,9 +290,11 @@ if not prep["delegated"]:
     )
     if not owner_accepts(notice):
         raise SystemExit("not rated: the owner declined the delegation")
-    authorization = ...   # EIP-7702, signed with the rater's own key over
-                          # chainId=delegate.chain_id, address=delegate.address,
-                          # nonce=prep["account_nonce"]; never chainId 0
+    # EIP-7702, signed with the rater's own key over chainId=delegate.chain_id,
+    # address=delegate.address, nonce=prep["account_nonce"]; never chainId 0.
+    # The dict Execution Market takes: {"chainId": int, "address": str,
+    # "nonce": int, "yParity": 0 | 1, "r": "0x…", "s": "0x…"}.
+    authorization = ...
     acknowledged = True
 
 result = await client.reputation.submit_relayed_rating(
